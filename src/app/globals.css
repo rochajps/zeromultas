@@ -2,26 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Override do CSS scaffold: nada de dark mode automático nem font Arial.
+   Cor/fonte são controladas pelas classes Tailwind no body do layout. */
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+  /* Garante que mesmo em mobile com auto dark mode do navegador
+     a paleta Tailwind do app prevalece */
+  color-scheme: light;
 }
