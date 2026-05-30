@@ -154,10 +154,18 @@ async function createLive(args: CreateChargeArgs): Promise<PixCharge> {
     throw new Error(`TriboPay create OK mas faltam campos no retorno. JSON: ${text.slice(0, 600)}`)
   }
 
+  // TriboPay nem sempre retorna o PNG do QR — geramos a partir do texto copia-e-cola
+  let qrPng = qrBase64
+  if (!qrPng) {
+    const QRCode = (await import('qrcode')).default
+    const dataUrl = await QRCode.toDataURL(qrText, { errorCorrectionLevel: 'M', margin: 1, width: 320 })
+    qrPng = dataUrl.replace(/^data:image\/png;base64,/, '')
+  }
+
   return {
     hash,
     qr_code_text: qrText,
-    qr_code_base64: qrBase64,
+    qr_code_base64: qrPng,
     amount_centavos: args.amount_centavos,
     expires_at: expires ?? null,
   }

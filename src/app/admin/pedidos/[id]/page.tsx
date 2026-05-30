@@ -70,9 +70,17 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
       <Section title="Recurso gerado">
         {order.recurso ? (
           <div>
-            <p className="text-xs text-slate-500">
-              Gerado em {order.recurso.gerado_em.toLocaleString('pt-BR')} · arquivo: <code>{order.recurso.pdf_path}</code>
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                Gerado em {order.recurso.gerado_em.toLocaleString('pt-BR')} · arquivo: <code>{order.recurso.pdf_path}</code>
+              </p>
+              <a
+                href={`/api/admin/pedidos/${order.id}/download`}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+              >
+                Baixar PDF
+              </a>
+            </div>
             <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-slate-50 p-3 text-xs">
               {order.recurso.texto}
             </pre>
