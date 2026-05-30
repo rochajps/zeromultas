@@ -6,6 +6,7 @@ import { routePhase } from '@/lib/phase-router'
 import { pickTier } from '@/lib/pricing'
 import { computeScore } from '@/lib/scoring'
 import { logEvent } from '@/lib/events'
+import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -21,6 +22,15 @@ function stringOrNull(v: FormDataEntryValue | null): string | null {
 export async function POST(req: NextRequest) {
   const ua = req.headers.get('user-agent')
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null
+
+  // Rate limit: 5 uploads por IP por hora (anti-abuso da chamada Anthropic)
+  const rl = rateLimit(`upload:${ip ?? 'unknown'}`, 5, 60 * 60 * 1000)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Muitas tentativas. Tente novamente em ${rl.retryAfterSec}s.` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+    )
+  }
 
   try {
     const formData = await req.formData()

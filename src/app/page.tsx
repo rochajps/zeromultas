@@ -227,10 +227,17 @@ function FAQ() {
 function Footer() {
   return (
     <footer className="border-t border-slate-200 bg-white px-4 py-8 text-center text-xs text-slate-500">
-      <p>
-        © {new Date().getFullYear()} Zero Multas. Análise jurídica administrativa por IA — não substitui consultoria com
-        advogado nos casos complexos.
-      </p>
+      <div className="mx-auto max-w-3xl space-y-2">
+        <p>
+          © {new Date().getFullYear()} Zero Multas. Análise jurídica administrativa por IA — não substitui consultoria com
+          advogado nos casos complexos.
+        </p>
+        <p className="space-x-3">
+          <a href="/privacidade" className="hover:text-slate-700">Política de Privacidade</a>
+          <span>·</span>
+          <a href="/termos" className="hover:text-slate-700">Termos de Uso</a>
+        </p>
+      </div>
     </footer>
   )
 }

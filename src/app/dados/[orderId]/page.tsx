@@ -106,7 +106,7 @@ export default function DadosPage({ params }: Props) {
             />
             <span className="text-xs text-slate-600">
               Autorizo o uso dos meus dados pessoais para a finalidade exclusiva de gerar o recurso administrativo
-              contratado, conforme a LGPD (base legal: execução de contrato). A imagem da CNH é descartada após extração;
+              contratado, conforme a <a href="/privacidade" target="_blank" className="text-blue-600 underline">Política de Privacidade</a> e os <a href="/termos" target="_blank" className="text-blue-600 underline">Termos de Uso</a>. A imagem da CNH é descartada após extração;
               dados ficam armazenados em servidor próprio, com acesso restrito.
             </span>
           </label>

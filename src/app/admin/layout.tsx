@@ -20,6 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Link href="/admin/precos" className="text-slate-600 hover:text-slate-900">Preços</Link>
               <Link href="/admin/prompts" className="text-slate-600 hover:text-slate-900">Prompts</Link>
               <Link href="/admin/metricas" className="text-slate-600 hover:text-slate-900">Métricas</Link>
+              <Link href="/admin/perfil" className="text-slate-600 hover:text-slate-900">Perfil</Link>
               <form action="/api/admin/logout" method="post">
                 <button className="rounded-lg border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50">
                   Sair
