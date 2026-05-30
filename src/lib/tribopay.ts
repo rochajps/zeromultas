@@ -1,14 +1,13 @@
-// Cliente TriboPay (PIX).
-// Suporta dois modos: 'live' (HTTP real) e 'mock' (dev/sem credenciais).
-// Quando a documentação da TriboPay estiver confirmada, ajustar os endpoints/payload
-// em LIVE_CONFIG abaixo. Estrutura aqui é genérica de PSPs brasileiros.
+// Cliente TriboPay (PIX) — endpoint /api/public/v1/transactions
+// Auth: api_token no BODY (não header).
+// Modelo: produto + oferta pré-criados no painel TriboPay; amount é informado por chamada.
 
 export interface PixCharge {
   hash: string
-  qr_code_text: string // copia-e-cola
-  qr_code_base64: string // imagem do QR
+  qr_code_text: string
+  qr_code_base64: string
   amount_centavos: number
-  expires_at: string | null // ISO
+  expires_at: string | null
 }
 
 export interface ChargeStatus {
@@ -22,21 +21,29 @@ export interface CreateChargeArgs {
   amount_centavos: number
   order_id: string
   description: string
-  payer?: { name?: string; document?: string }
+  payer: { name: string; email?: string | null; document?: string | null; phone?: string | null }
   webhook_url?: string
 }
 
 function mode(): 'live' | 'mock' {
-  const m = (process.env.TRIBOPAY_MODE ?? '').toLowerCase()
-  if (m === 'live') return 'live'
-  return 'mock'
+  return (process.env.TRIBOPAY_MODE ?? '').toLowerCase() === 'live' ? 'live' : 'mock'
 }
 
 function liveConfig() {
-  const apiUrl = process.env.TRIBOPAY_API_URL
-  const apiKey = process.env.TRIBOPAY_API_KEY
-  if (!apiUrl || !apiKey) throw new Error('TRIBOPAY_API_URL e TRIBOPAY_API_KEY são obrigatórias em modo live')
-  return { apiUrl, apiKey }
+  const apiUrl = process.env.TRIBOPAY_API_URL ?? 'https://api.tribopay.com.br'
+  const apiToken = process.env.TRIBOPAY_API_KEY
+  const offerHash = process.env.TRIBOPAY_OFFER_HASH
+  const productHash = process.env.TRIBOPAY_PRODUCT_HASH
+  if (!apiToken || !offerHash || !productHash) {
+    throw new Error('TRIBOPAY_API_KEY, TRIBOPAY_OFFER_HASH e TRIBOPAY_PRODUCT_HASH são obrigatórias em modo live')
+  }
+  return { apiUrl, apiToken, offerHash, productHash }
+}
+
+function sanitizeDigits(s: string | null | undefined): string | undefined {
+  if (!s) return undefined
+  const d = s.replace(/\D+/g, '')
+  return d.length > 0 ? d : undefined
 }
 
 // ---------- API pública ----------
@@ -50,7 +57,6 @@ export async function fetchChargeStatus(hash: string): Promise<ChargeStatus> {
 }
 
 // ---------- Modo MOCK (dev) ----------
-// Mantém um mapa em memória de hashes → status, pra simular o ciclo.
 const _mockStore = new Map<string, ChargeStatus>()
 
 function genHash(): string {
@@ -79,7 +85,6 @@ async function statusMock(hash: string): Promise<ChargeStatus> {
   return s
 }
 
-/** Util de dev: marca um hash como pago (usado pelo admin/dev pra simular pagamento). */
 export function _mockMarkPaid(hash: string) {
   const s = _mockStore.get(hash)
   if (!s) return false
@@ -88,72 +93,104 @@ export function _mockMarkPaid(hash: string) {
   return true
 }
 
-// ---------- Modo LIVE (HTTP) ----------
-// AJUSTAR conforme docs.tribopay.com.br quando recebermos credenciais.
+// ---------- Modo LIVE ----------
 
 async function createLive(args: CreateChargeArgs): Promise<PixCharge> {
-  const { apiUrl, apiKey } = liveConfig()
-  const resp = await fetch(`${apiUrl}/transactions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const { apiUrl, apiToken, offerHash, productHash } = liveConfig()
+
+  const body = {
+    api_token: apiToken,
+    offer_hash: offerHash,
+    payment_method: 'pix',
+    amount: args.amount_centavos,
+    customer: {
+      name: args.payer.name,
+      email: args.payer.email ?? `pedido-${args.order_id.slice(0, 10)}@zeromultas.pro`,
+      document: sanitizeDigits(args.payer.document),
+      phone_number: sanitizeDigits(args.payer.phone),
     },
-    body: JSON.stringify({
-      amount: args.amount_centavos,
-      payment_method: 'pix',
-      external_reference: args.order_id,
-      description: args.description,
-      customer: args.payer
-        ? { name: args.payer.name, document: { number: args.payer.document } }
-        : undefined,
-      postback_url: args.webhook_url,
-    }),
-  })
-  if (!resp.ok) {
-    const body = await resp.text()
-    throw new Error(`TriboPay create failed [${resp.status}]: ${body.slice(0, 400)}`)
+    cart: [
+      {
+        product_hash: productHash,
+        offer_hash: offerHash,
+        title: args.description,
+        price: args.amount_centavos,
+        quantity: 1,
+        operation_type: 1,
+        tangible: false,
+      },
+    ],
+    external_reference: args.order_id,
+    postback_url: args.webhook_url,
   }
-  const json = (await resp.json()) as any
-  // os caminhos abaixo são uma melhor-suposição comum em PSPs BR — ajustar pelo retorno real
-  const hash: string = json.hash ?? json.id ?? json.transaction?.hash
-  const text: string = json.pix?.qr_code ?? json.pix?.copia_e_cola ?? json.qr_code_text
-  const png: string = json.pix?.qr_code_base64 ?? json.qr_code_base64 ?? ''
+
+  const resp = await fetch(`${apiUrl}/api/public/v1/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  const text = await resp.text()
+  let json: Record<string, unknown> = {}
+  try {
+    json = JSON.parse(text) as Record<string, unknown>
+  } catch {
+    throw new Error(`TriboPay create resposta não-JSON [${resp.status}]: ${text.slice(0, 400)}`)
+  }
+
+  if (!resp.ok) {
+    throw new Error(`TriboPay create [${resp.status}]: ${text.slice(0, 600)}`)
+  }
+
+  // Estrutura de retorno (com base em padrões PSP BR — ajustar conforme primeira resposta real)
+  const data = (json.data ?? json) as Record<string, unknown>
+  const pix = (data.pix ?? json.pix ?? {}) as Record<string, unknown>
+  const hash = (data.hash ?? json.hash ?? data.id ?? json.id) as string | undefined
+  const qrText = (pix.qr_code ?? pix.pix_qr_code ?? pix.copy_paste ?? pix.payload) as string | undefined
+  const qrBase64 = ((pix.qr_code_base64 ?? pix.pix_qr_code_base64) as string | undefined) ?? ''
+  const expires = (pix.expiration_date ?? pix.expires_at ?? data.expires_at) as string | undefined
+
+  if (!hash || !qrText) {
+    throw new Error(`TriboPay create OK mas faltam campos no retorno. JSON: ${text.slice(0, 600)}`)
+  }
+
   return {
     hash,
-    qr_code_text: text,
-    qr_code_base64: png,
+    qr_code_text: qrText,
+    qr_code_base64: qrBase64,
     amount_centavos: args.amount_centavos,
-    expires_at: json.pix?.expiration_date ?? json.expires_at ?? null,
+    expires_at: expires ?? null,
   }
 }
 
 async function statusLive(hash: string): Promise<ChargeStatus> {
-  const { apiUrl, apiKey } = liveConfig()
-  const resp = await fetch(`${apiUrl}/transactions/${encodeURIComponent(hash)}`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
-  })
+  const { apiUrl, apiToken } = liveConfig()
+  const url = new URL(`${apiUrl}/api/public/v1/transactions/${encodeURIComponent(hash)}`)
+  url.searchParams.set('api_token', apiToken)
+  const resp = await fetch(url.toString(), { headers: { Accept: 'application/json' } })
+  const text = await resp.text()
   if (!resp.ok) {
-    const body = await resp.text()
-    throw new Error(`TriboPay status failed [${resp.status}]: ${body.slice(0, 400)}`)
+    throw new Error(`TriboPay status [${resp.status}]: ${text.slice(0, 400)}`)
   }
-  const json = (await resp.json()) as any
-  const raw = String(json.status ?? json.transaction?.status ?? '').toLowerCase()
+  const json = JSON.parse(text) as Record<string, unknown>
+  const data = (json.data ?? json) as Record<string, unknown>
+  const raw = String(data.status ?? '').toLowerCase()
+
   const status: ChargeStatus['status'] =
     raw === 'paid' || raw === 'approved' || raw === 'pago'
       ? 'pago'
-      : raw === 'canceled' || raw === 'cancelled' || raw === 'cancelado'
+      : raw === 'canceled' || raw === 'cancelled' || raw === 'cancelado' || raw === 'refunded'
       ? 'cancelado'
       : raw === 'expired' || raw === 'expirado'
       ? 'expirado'
       : raw === 'pending' || raw === 'waiting_payment' || raw === 'pendente'
       ? 'pendente'
       : 'desconhecido'
+
   return {
     hash,
     status,
-    paid_at: json.paid_at ?? json.transaction?.paid_at ?? null,
-    amount_centavos: json.amount ?? null,
+    paid_at: (data.paid_at as string | null) ?? null,
+    amount_centavos: (data.amount as number | null) ?? null,
   }
 }

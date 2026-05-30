@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       amount_centavos: order.preco_centavos,
       order_id: orderId,
       description: `Recurso de multa #${orderId.slice(0, 8)}`,
-      payer: { name: order.driver_data.nome, document: order.driver_data.cpf },
+      payer: { name: order.driver_data.nome, document: order.driver_data.cpf, email: null, phone: null },
       webhook_url: publicUrl('/api/webhook/tribopay'),
     })
 
