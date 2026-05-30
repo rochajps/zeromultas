@@ -1,0 +1,189 @@
+// Prisma schema — zeromultas
+// MVP: gerador de recursos de multa (defesa prévia + JARI)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  analisado
+  aguardando_pagamento
+  pago
+  gerado
+  entregue
+  vencido
+}
+
+enum Fase {
+  defesa_previa
+  jari
+  vencido
+}
+
+enum PrazoStatus {
+  valido
+  vencido
+}
+
+enum TipoNotificacao {
+  NA
+  NP
+  desconhecido
+}
+
+enum PromptTipo {
+  analise
+  geracao_defesa_previa
+  geracao_jari
+  extracao_cnh
+  extracao_completa
+}
+
+model Order {
+  id                    String        @id @default(cuid())
+  status                OrderStatus   @default(analisado)
+  valor_multa_centavos  Int?
+  faixa_id              Int?
+  preco_centavos        Int?
+  tribopay_hash         String?       @unique
+  fase                  Fase?
+  prazo_limite          DateTime?
+  prazo_status          PrazoStatus?
+  download_token        String?       @unique
+  utm_source            String?
+  utm_medium            String?
+  utm_campaign          String?
+  utm_content           String?
+  utm_term              String?
+  created_at            DateTime      @default(now())
+  updated_at            DateTime      @updatedAt
+  paid_at               DateTime?
+  generated_at          DateTime?
+
+  fine_data    FineData?
+  driver_data  DriverData?
+  driver_input DriverInput?
+  recurso      Recurso?
+  events       Event[]
+  price_tier   PriceTier?   @relation(fields: [faixa_id], references: [id])
+
+  @@index([status])
+  @@index([created_at])
+}
+
+model FineData {
+  id                   Int              @id @default(autoincrement())
+  order_id             String           @unique
+  is_multa             Boolean?
+  tipo_notificacao     TipoNotificacao?
+  data_notificacao     DateTime?
+  data_infracao        DateTime?
+  num_ait              String?
+  orgao_autuador       String?
+  codigo_infracao      String?
+  descricao_infracao   String?
+  placa                String?
+  veiculo              String?
+  valor_multa_centavos Int?
+  vicio_forte          Boolean?
+  vicio_razao          String?
+  vicios_detectados    Json?
+  score                Int?
+  raw_analise          Json?
+  raw_extracao         Json?
+  created_at           DateTime         @default(now())
+  updated_at           DateTime         @updatedAt
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model DriverData {
+  id         Int      @id @default(autoincrement())
+  order_id   String   @unique
+  nome       String
+  cpf        String
+  num_cnh    String
+  endereco   String
+  created_at DateTime @default(now())
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model DriverInput {
+  id                 Int      @id @default(autoincrement())
+  order_id           String   @unique
+  motivo_injustica   String   @db.Text
+  consentimento_lgpd Boolean  @default(false)
+  consentido_em      DateTime?
+  created_at         DateTime @default(now())
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model PriceTier {
+  id                       Int      @id @default(autoincrement())
+  faixa                    String
+  valor_multa_min_centavos Int
+  valor_multa_max_centavos Int
+  preco_centavos           Int
+  ativo                    Boolean  @default(true)
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  orders Order[]
+
+  @@index([ativo])
+}
+
+model PromptVersion {
+  id          Int        @id @default(autoincrement())
+  tipo        PromptTipo
+  conteudo_md String     @db.Text
+  versao      Int
+  ativo       Boolean    @default(false)
+  notas       String?
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  @@unique([tipo, versao])
+  @@index([tipo, ativo])
+}
+
+model Recurso {
+  id        Int      @id @default(autoincrement())
+  order_id  String   @unique
+  texto     String   @db.Text
+  pdf_path  String
+  gerado_em DateTime @default(now())
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model AdminUser {
+  id            Int       @id @default(autoincrement())
+  login         String    @unique
+  senha_hash    String
+  nome          String?
+  created_at    DateTime  @default(now())
+  last_login_at DateTime?
+}
+
+model Event {
+  id         Int      @id @default(autoincrement())
+  order_id   String?
+  tipo       String
+  metadata   Json?
+  user_agent String?
+  ip_hash    String?
+  created_at DateTime @default(now())
+
+  order Order? @relation(fields: [order_id], references: [id], onDelete: SetNull)
+
+  @@index([tipo, created_at])
+  @@index([order_id])
+}

@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# production / build
+/build
+/dist
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local env files (NUNCA comitar)
+.env
+.env*.local
+.env.production
+.env.development
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# storage (PDFs gerados ficam fora do repo)
+/storage/
+
+# pm2
+ecosystem.config.cjs.bak
+.pm2/
+
+# scripts one-shot do prisma (já aplicados)
+prisma/update-prompt-*.ts
+prisma/seed-fake-order.ts
+
+# logs
+*.log
