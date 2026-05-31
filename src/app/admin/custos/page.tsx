@@ -60,7 +60,7 @@ export default async function CustosPage() {
     const c = computeCostUSD(u, u.model).total
     porPedido.set(u.order_id, (porPedido.get(u.order_id) ?? 0) + c)
   }
-  const topPedidos = [...porPedido.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)
+  const topPedidos = Array.from(porPedido.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20)
 
   return (
     <div className="space-y-6">
