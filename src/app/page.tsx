@@ -390,16 +390,23 @@ function Uploader() {
               <button
                 type="button"
                 onClick={() => cameraRef.current?.click()}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-yellow px-5 text-sm font-bold text-brand-blue-dark shadow-sm transition hover:bg-brand-yellow-hover active:scale-[0.98] sm:hidden"
+                disabled={!turnstileToken}
+                className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold shadow-sm transition active:scale-[0.98] sm:hidden ${turnstileToken ? 'bg-brand-yellow text-brand-blue-dark hover:bg-brand-yellow-hover' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
               >
                 <CameraIcon className="h-5 w-5" />
-                <span>Tirar foto pela câmera</span>
+                <span>{turnstileToken ? 'Tirar foto pela câmera' : 'Aguarde…'}</span>
               </button>
             </div>
 
             <p className="mt-5 flex items-center justify-center gap-1.5 text-xs text-slate-500">
               <LockIcon className="h-3.5 w-3.5" /> A imagem é processada e descartada — não guardamos seu arquivo.
             </p>
+            {!turnstileToken && (
+              <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-amber-700">
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                Validando segurança da sessão…
+              </p>
+            )}
 
           <div ref={turnstileRef} className="mt-3 flex justify-center" />
 
