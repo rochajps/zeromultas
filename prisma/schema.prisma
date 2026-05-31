@@ -133,6 +133,7 @@ model DriverData {
   endereco   String
   cep        String?
   whatsapp   String?
+  email      String?
   created_at DateTime @default(now())
 
   order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
@@ -373,4 +374,21 @@ model ManualFineData {
   created_at        DateTime  @default(now())
 
   order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model EmailOutbox {
+  id                  Int       @id @default(autoincrement())
+  order_id            String
+  tipo                String
+  destinatario        String
+  status              String    @default("pendente")
+  tentativas          Int       @default(0)
+  last_error          String?
+  provider_message_id String?
+  created_at          DateTime  @default(now())
+  sent_at             DateTime?
+
+  @@unique([order_id, tipo])
+  @@index([status, created_at])
+  @@index([order_id])
 }
