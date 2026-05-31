@@ -1,7 +1,7 @@
 // Lógica pura de roteamento da fase do recurso administrativo de trânsito.
 // Não usa IA — determinístico, a partir do tipo da notificação e da data.
 
-export const PRAZO_DIAS = 30 // art. 281-A do CTB (defesa prévia) e art. 285 (JARI)
+export const PRAZO_DIAS_DEFAULT = 30 // art. 281-A do CTB (defesa prévia) e art. 285 (JARI)
 
 export type TipoNotificacao = 'NA' | 'NP' | 'desconhecido'
 export type Fase = 'defesa_previa' | 'jari' | 'vencido'
@@ -11,6 +11,7 @@ export interface PhaseInput {
   tipo_notificacao: TipoNotificacao | null | undefined
   data_notificacao: Date | string | null | undefined
   now?: Date
+  prazoDias?: number
 }
 
 export interface PhaseResult {
@@ -23,6 +24,7 @@ export interface PhaseResult {
 
 export function routePhase(input: PhaseInput): PhaseResult {
   const now = input.now ?? new Date()
+  const prazoDias = input.prazoDias ?? PRAZO_DIAS_DEFAULT
   const tipo = input.tipo_notificacao ?? null
   const dataNotif = parseDate(input.data_notificacao)
 
@@ -33,7 +35,7 @@ export function routePhase(input: PhaseInput): PhaseResult {
     return vencidoResult(null, null, 'Data da notificação ausente')
   }
 
-  const prazo_limite = addDays(dataNotif, PRAZO_DIAS)
+  const prazo_limite = addDays(dataNotif, prazoDias)
   const dias_restantes = daysDiff(prazo_limite, now)
   const vencido = dias_restantes < 0
 

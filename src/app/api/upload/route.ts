@@ -6,6 +6,7 @@ import { routePhase } from '@/lib/phase-router'
 import { pickTier } from '@/lib/pricing'
 import { computeScore } from '@/lib/scoring'
 import { logEvent } from '@/lib/events'
+import { getSettings } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer())
     const systemPrompt = await getActivePrompt('analise')
 
+    const settings = await getSettings()
     const { data: analise } = await analyzeFine({ buffer, mimeType: file.type, systemPrompt })
     // imagem descartada — não persistimos buffer/arquivo
 
@@ -60,18 +62,28 @@ export async function POST(req: NextRequest) {
     const phase = routePhase({
       tipo_notificacao: analise.tipo_notificacao,
       data_notificacao: dataNotif,
+      prazoDias: settings.prazo_dias,
     })
 
     const score = computeScore({
       vicio_forte: analise.vicio_forte,
       prazo_status: phase.prazo_status,
       is_multa: analise.is_multa,
+      config: settings,
     })
+
+    // Bloqueia venda se faltam menos de X dias pro vencimento (regra configurável)
+    const bloqueiaProximoVencimento =
+      settings.cobrar_proximo_vencimento_dias > 0 &&
+      phase.dias_restantes != null &&
+      phase.dias_restantes < settings.cobrar_proximo_vencimento_dias
+    const faseEfetiva = bloqueiaProximoVencimento ? 'vencido' : phase.fase
+    const prazoStatusEfetivo = bloqueiaProximoVencimento ? 'vencido' : phase.prazo_status
 
     let preco_centavos: number | null = null
     let faixa_id: number | null = null
     let tier_label: string | null = null
-    if (analise.valor_multa_centavos && phase.fase !== 'vencido') {
+    if (analise.valor_multa_centavos && faseEfetiva !== 'vencido') {
       const tiers = await prisma.priceTier.findMany({ where: { ativo: true } })
       const pricing = pickTier(analise.valor_multa_centavos, tiers)
       if (pricing) {
@@ -83,13 +95,13 @@ export async function POST(req: NextRequest) {
 
     const order = await prisma.order.create({
       data: {
-        status: phase.fase === 'vencido' ? 'vencido' : 'analisado',
+        status: faseEfetiva === 'vencido' ? 'vencido' : 'analisado',
         valor_multa_centavos: analise.valor_multa_centavos ?? null,
         faixa_id,
         preco_centavos,
-        fase: phase.fase,
+        fase: faseEfetiva,
         prazo_limite: phase.prazo_limite,
-        prazo_status: phase.prazo_status,
+        prazo_status: prazoStatusEfetivo,
         ...utm,
         fine_data: {
           create: {
@@ -125,8 +137,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       orderId: order.id,
       is_multa: analise.is_multa,
-      fase: phase.fase,
-      prazo_status: phase.prazo_status,
+      fase: faseEfetiva,
+      prazo_status: prazoStatusEfetivo,
       prazo_limite: phase.prazo_limite?.toISOString() ?? null,
       dias_restantes: phase.dias_restantes,
       score: score.score,

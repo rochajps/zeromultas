@@ -187,3 +187,14 @@ model Event {
   @@index([tipo, created_at])
   @@index([order_id])
 }
+
+model Setting {
+  key          String   @id
+  type         String   // 'number' | 'text' | 'boolean'
+  value_number Int?
+  value_text   String?  @db.Text
+  value_bool   Boolean?
+  description  String
+  group        String   @default("geral")
+  updated_at   DateTime @updatedAt
+}
