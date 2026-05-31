@@ -67,6 +67,10 @@ model Order {
   data_missing          Boolean       @default(false)
   valor_missing         Boolean       @default(false)
   cnh_manual            Boolean       @default(false)
+  modo_geracao              ModoGeracao?
+  vicios_finais             Json?
+  score_band                ScoreBand?
+  permite_arguir_sumula_312 Boolean       @default(false)
   analisado_em          DateTime?
   dados_em              DateTime?
   checkout_em           DateTime?
@@ -226,4 +230,16 @@ model ApiUsage {
 
   @@index([kind, created_at])
   @@index([order_id])
+}
+
+enum ModoGeracao {
+  vicio_forte
+  moderado
+  generico
+}
+
+enum ScoreBand {
+  alta
+  media
+  moderada_baixa
 }

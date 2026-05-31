@@ -26,9 +26,12 @@ export function ScoreBadge({ score }: { score: number }) {
   if (score >= 80) {
     label = 'Boa chance de anular'
     cls = 'bg-emerald-500 text-white'
-  } else if (score >= 50) {
+  } else if (score >= 60) {
     label = 'Vale tentar'
     cls = 'bg-blue-500 text-white'
+  } else if (score >= 30) {
+    label = 'Vale tentar (sem garantia)'
+    cls = 'bg-amber-500 text-white'
   } else if (score > 0) {
     label = 'Chance baixa'
     cls = 'bg-slate-400 text-white'

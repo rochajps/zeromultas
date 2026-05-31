@@ -48,7 +48,7 @@ export default async function ResultadoPage({ params }: PageProps) {
 
   const score = fineData
     ? computeScore({
-        vicio_forte: fineData.vicio_forte ?? false,
+        band: order.score_band ?? (fineData.vicio_forte ? 'alta' : 'moderada_baixa'),
         is_multa: fineData.is_multa ?? false,
         config: settings,
       })

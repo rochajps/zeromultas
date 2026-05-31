@@ -5,6 +5,7 @@ import { analyzeFine } from '@/lib/anthropic'
 import { routePhase } from '@/lib/phase-router'
 import { pickTier } from '@/lib/pricing'
 import { computeScore } from '@/lib/scoring'
+import { definirModoGeracao } from '@/lib/modo-geracao'
 import { logEvent } from '@/lib/events'
 import { getSettings } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
@@ -75,8 +76,18 @@ export async function POST(req: NextRequest) {
       prazoDias: settings.prazo_dias,
     })
 
-    const score = computeScore({
+    // Roteamento determinístico do modo (em código, sem IA)
+    const rota = definirModoGeracao({
+      tipo_notificacao: tipoEfetivo,
+      data_infracao: dataInfr,
+      data_notificacao: dataNotif,
       vicio_forte: analise.vicio_forte,
+      vicio_razao: analise.vicio_razao,
+      vicios_detectados: analise.vicios_detectados,
+    })
+
+    const score = computeScore({
+      band: rota.score_band,
       is_multa: analise.is_multa,
       config: settings,
     })
@@ -103,6 +114,10 @@ export async function POST(req: NextRequest) {
         fase: phase.fase,
         prazo_limite: phase.prazo_limite,
         prazo_status: phase.prazo_status,
+        modo_geracao: rota.modo,
+        vicios_finais: rota.vicios_finais as never,
+        score_band: rota.score_band,
+        permite_arguir_sumula_312: rota.permite_arguir_sumula_312,
         analisado_em: new Date(),
         ...utm,
         fine_data: {
@@ -135,7 +150,10 @@ export async function POST(req: NextRequest) {
       ip,
       metadata: {
         fase: phase.fase,
+        modo: rota.modo,
         score: score.score,
+        score_band: rota.score_band,
+        vicios_finais_count: rota.vicios_finais.length,
         vicio_forte: analise.vicio_forte,
         valor_missing: valorMissing,
         data_missing: dataMissing,

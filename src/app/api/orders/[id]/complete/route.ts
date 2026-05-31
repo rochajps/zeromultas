@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { routePhase } from '@/lib/phase-router'
 import { pickTier } from '@/lib/pricing'
 import { computeScore } from '@/lib/scoring'
+import { definirModoGeracao } from '@/lib/modo-geracao'
 import { getSettings } from '@/lib/settings'
 import { logEvent } from '@/lib/events'
 
@@ -48,8 +49,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     prazoDias: settings.prazo_dias,
   })
 
+  const rota = definirModoGeracao({
+    tipo_notificacao: tipo,
+    data_infracao: order.fine_data.data_infracao,
+    data_notificacao: dataNotif,
+    vicio_forte: order.fine_data.vicio_forte,
+    vicio_razao: order.fine_data.vicio_razao,
+    vicios_detectados: order.fine_data.vicios_detectados as never,
+  })
+
   const score = computeScore({
-    vicio_forte: order.fine_data.vicio_forte ?? false,
+    band: rota.score_band,
     is_multa: order.fine_data.is_multa ?? true,
     config: settings,
   })
@@ -77,6 +87,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         prazo_limite: phase.prazo_limite,
         prazo_status: phase.prazo_status,
         data_missing: !dataNotif,
+        modo_geracao: rota.modo,
+        vicios_finais: rota.vicios_finais as never,
+        score_band: rota.score_band,
+        permite_arguir_sumula_312: rota.permite_arguir_sumula_312,
         status: 'analisado',
       },
     }),
