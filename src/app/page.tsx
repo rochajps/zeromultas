@@ -15,6 +15,20 @@ type UploadResult = {
 // Página
 // ============================================================
 export default function HomePage() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const utm: Record<string, string> = {}
+    ;['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((k) => {
+      const v = params.get(k)
+      if (v) utm[k] = v
+    })
+    fetch('/api/events', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tipo: 'visita_lp', metadata: utm }),
+      keepalive: true,
+    }).catch(() => {})
+  }, [])
   return (
     <>
       <FaqJsonLd />

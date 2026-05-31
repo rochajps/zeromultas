@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
+import { CompleteDataForm, CetranCta, ScoreBadge, TrackResultView } from './client'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,22 +18,35 @@ export default async function ResultadoPage({ params }: PageProps) {
   if (!order) notFound()
 
   const fineData = order.fine_data
+  const precisaCompletar = order.valor_missing || order.data_missing
   const vencido = order.fase === 'vencido' || order.status === 'vencido'
-  const score = fineData?.score ?? 0
 
   return (
-    <main className="min-h-screen px-4 py-10">
+    <main className="min-h-screen bg-slate-50 px-4 py-10">
+      <TrackResultView orderId={order.id} />
       <div className="mx-auto max-w-2xl">
-        <BackLink />
+        <Link href="/" className="mb-4 inline-block text-sm text-slate-500 hover:text-slate-700">
+          ← Voltar
+        </Link>
+
         {!fineData?.is_multa ? (
           <NaoEhMulta />
+        ) : precisaCompletar && !vencido ? (
+          <CompleteDataForm
+            orderId={order.id}
+            valorMissing={order.valor_missing}
+            dataMissing={order.data_missing}
+          />
         ) : vencido ? (
-          <Vencido prazoLimite={order.prazo_limite} />
+          <>
+            <Vencido prazoLimite={order.prazo_limite} fase={order.fase} />
+            <CetranCta orderId={order.id} />
+          </>
         ) : (
           <Diagnostico
             orderId={order.id}
-            fase={order.fase as "defesa_previa" | "jari"}
-            score={score}
+            fase={order.fase!}
+            score={fineData.score ?? 0}
             vicioForte={fineData.vicio_forte ?? false}
             vicioRazao={fineData.vicio_razao}
             placa={fineData.placa}
@@ -45,14 +59,6 @@ export default async function ResultadoPage({ params }: PageProps) {
         )}
       </div>
     </main>
-  )
-}
-
-function BackLink() {
-  return (
-    <Link href="/" className="mb-4 inline-block text-sm text-slate-500 hover:text-slate-700">
-      ← Voltar
-    </Link>
   )
 }
 
@@ -71,17 +77,17 @@ function NaoEhMulta() {
   )
 }
 
-function Vencido({ prazoLimite }: { prazoLimite: Date | null }) {
+function Vencido({ prazoLimite, fase }: { prazoLimite: Date | null; fase: string | null }) {
   return (
     <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
       <h1 className="text-xl font-bold text-red-900">Prazo administrativo encerrado</h1>
       <p className="mt-2 text-sm text-red-800">
-        O prazo de 30 dias para defesa prévia ou recurso à JARI já venceu
-        {prazoLimite ? ` em ${prazoLimite.toLocaleDateString('pt-BR')}` : ''}. Não vamos cobrar por um recurso intempestivo —
-        seria desperdício seu.
+        O prazo legal de 30 dias para defesa prévia/recurso à JARI já encerrou
+        {prazoLimite ? ` em ${prazoLimite.toLocaleDateString('pt-BR')}` : ''}. Não cobramos por recurso intempestivo.
       </p>
       <p className="mt-3 text-sm text-red-800">
-        Em alguns casos ainda cabe recurso ao CETRAN (2ª instância) ou via judicial — converse com um advogado.
+        <strong>Mas ainda existe uma alternativa:</strong> se você já recorreu à JARI e teve a decisão negada,
+        ainda cabe recurso ao CETRAN (3ª instância) — também tem prazo de 30 dias contados da ciência da decisão.
       </p>
     </div>
   )
@@ -89,7 +95,7 @@ function Vencido({ prazoLimite }: { prazoLimite: Date | null }) {
 
 function Diagnostico(props: {
   orderId: string
-  fase: 'defesa_previa' | 'jari'
+  fase: 'defesa_previa' | 'jari' | 'cetran' | string
   score: number
   vicioForte: boolean
   vicioRazao: string | null
@@ -100,9 +106,11 @@ function Diagnostico(props: {
   faixaLabel: string | null
   prazoLimite: Date | null
 }) {
-  const faseLabel = props.fase === 'defesa_previa' ? 'Defesa Prévia' : 'Recurso à JARI'
-  const scoreBg = props.score >= 80 ? 'bg-emerald-500' : props.score >= 50 ? 'bg-blue-500' : 'bg-slate-400'
-  const scoreFaixa = props.score >= 80 ? 'Alto' : props.score >= 50 ? 'Moderado' : 'Baixo'
+  const faseLabel =
+    props.fase === 'defesa_previa' ? 'Defesa Prévia' :
+    props.fase === 'jari' ? 'Recurso à JARI' :
+    props.fase === 'cetran' ? 'Recurso ao CETRAN' :
+    'Recurso'
 
   return (
     <div className="space-y-4">
@@ -116,23 +124,19 @@ function Diagnostico(props: {
         )}
 
         <div className="mt-6 rounded-xl bg-slate-50 p-4">
-          <div className="flex items-baseline justify-between">
-            <span className="text-sm font-medium text-slate-700">Viabilidade do recurso</span>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold text-white ${scoreBg}`}>
-              {scoreFaixa} · {props.score}/100
-            </span>
-          </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-            <div className={`h-full ${scoreBg}`} style={{ width: `${props.score}%` }} />
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm font-medium text-slate-700">Sua chance de recorrer</span>
+            <ScoreBadge score={props.score} />
           </div>
           {props.vicioForte ? (
             <p className="mt-3 text-sm text-emerald-700">
-              ✓ Identificamos vício formal claro: <strong>{props.vicioRazao ?? '—'}</strong>. Boa fundamentação pra anular.
+              ✓ Encontramos um erro formal: <strong>{props.vicioRazao ?? '—'}</strong>. Boa pedida pra anular.
             </p>
           ) : (
             <p className="mt-3 text-sm text-slate-600">
-              Não identificamos vício formal forte, mas <strong>ainda vale recorrer</strong>: o processo é gratuito, suspende pontos
-              e o seu motivo será fundamentado tecnicamente. Sem garantia de êxito.
+              Não encontramos um erro formal claro, mas <strong>ainda vale tentar</strong>: o recurso é gratuito,
+              suspende pontos enquanto está em análise e o seu motivo será fundamentado tecnicamente.
+              <span className="block text-xs text-slate-500 mt-1">(Sem garantia de êxito — depende do órgão julgador.)</span>
             </p>
           )}
         </div>
@@ -166,7 +170,7 @@ function Diagnostico(props: {
           {props.faixaLabel && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{props.faixaLabel}</span>}
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Pagamento único por Pix. Sem mensalidade, sem assinatura. PDF liberado logo após confirmação.
+          Pagamento único por PIX. Sem mensalidade, sem assinatura. PDF liberado logo após confirmação.
         </p>
         <Link
           href={`/dados/${props.orderId}`}

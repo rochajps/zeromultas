@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -11,66 +11,171 @@ export default function DadosPage({ params }: Props) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [modo, setModo] = useState<'foto' | 'manual'>('foto')
+  const [nome, setNome] = useState('')
+  const [cpf, setCpf] = useState('')
+  const [cnh, setCnh] = useState('')
   const [endereco, setEndereco] = useState('')
   const [motivo, setMotivo] = useState('')
   const [lgpd, setLgpd] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // log abandono se sair sem submeter
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (!loading) {
+        navigator.sendBeacon?.(
+          '/api/events',
+          new Blob([JSON.stringify({ tipo: 'abandono_dados', order_id: params.orderId })], { type: 'application/json' }),
+        )
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [params.orderId, loading])
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    if (!file) {
-      setError('Envie a foto da CNH.')
-      return
-    }
     setLoading(true)
     try {
       const fd = new FormData()
-      fd.append('cnh_file', file)
+      fd.append('modo', modo)
       fd.append('endereco', endereco)
       fd.append('motivo_injustica', motivo)
       fd.append('consentimento_lgpd', lgpd ? 'true' : 'false')
+
+      if (modo === 'foto') {
+        if (!file) {
+          setError('Envie a foto da CNH ou troque pra digitação manual.')
+          setLoading(false)
+          return
+        }
+        fd.append('cnh_file', file)
+      } else {
+        fd.append('nome', nome)
+        fd.append('cpf', cpf)
+        fd.append('num_cnh', cnh)
+      }
+
       const res = await fetch(`/api/orders/${params.orderId}/driver`, { method: 'POST', body: fd })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Falha ao salvar')
+      if (!res.ok) {
+        if (data.requires_manual) {
+          setError('Não conseguimos ler a foto. Use a opção "Digitar manualmente" abaixo.')
+          setModo('manual')
+        } else {
+          throw new Error(data.error ?? 'Falha ao salvar')
+        }
+        setLoading(false)
+        return
+      }
       router.push(`/checkout/${params.orderId}`)
-    } catch (err: any) {
-      setError(err?.message ?? 'Erro inesperado')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro inesperado')
       setLoading(false)
     }
   }
 
+  const podeEnviar =
+    endereco.length >= 5 &&
+    motivo.length >= 10 &&
+    lgpd &&
+    (modo === 'foto' ? !!file : nome.length >= 5 && cpf.replace(/\D+/g, '').length === 11 && cnh.replace(/\D+/g, '').length >= 9)
+
   return (
-    <main className="min-h-screen px-4 py-10">
+    <main className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto max-w-xl">
         <a href={`/resultado/${params.orderId}`} className="mb-4 inline-block text-sm text-slate-500 hover:text-slate-700">
           ← Voltar
         </a>
         <h1 className="text-2xl font-bold">Quase lá — seus dados</h1>
-        <p className="mt-1 text-sm text-slate-600">Precisamos do mínimo legal pra montar a peça e protocolar em seu nome.</p>
+        <p className="mt-1 text-sm text-slate-600">Precisamos do mínimo legal pra montar a peça em seu nome.</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div>
-            <label className="text-sm font-medium">Foto da CNH (frente)</label>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/heic"
-              className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
+          {/* Toggle entre foto e manual */}
+          <div className="flex gap-2 rounded-lg bg-slate-100 p-1 text-sm">
             <button
               type="button"
-              onClick={() => fileRef.current?.click()}
-              className="mt-2 flex w-full items-center justify-center rounded-lg border-2 border-dashed border-slate-300 p-4 text-sm text-slate-600 hover:bg-slate-50"
+              onClick={() => setModo('foto')}
+              className={`flex-1 rounded-md px-3 py-1.5 font-medium ${modo === 'foto' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}
             >
-              {file ? `📎 ${file.name}` : '📷 Selecionar foto da CNH'}
+              📷 Foto da CNH
             </button>
-            <p className="mt-1 text-xs text-slate-400">
-              🔒 Extraímos nome, CPF e nº da CNH e <strong>descartamos a imagem</strong> em seguida.
-            </p>
+            <button
+              type="button"
+              onClick={() => setModo('manual')}
+              className={`flex-1 rounded-md px-3 py-1.5 font-medium ${modo === 'manual' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}
+            >
+              ✏️ Digitar
+            </button>
           </div>
+
+          {modo === 'foto' ? (
+            <div>
+              <label className="text-sm font-medium">Foto da CNH (frente)</label>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="mt-2 flex w-full items-center justify-center rounded-lg border-2 border-dashed border-slate-300 p-4 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                {file ? `📎 ${file.name}` : '📷 Selecionar / tirar foto da CNH'}
+              </button>
+              <p className="mt-1 text-xs text-slate-400">
+                🔒 Extraímos nome, CPF e nº da CNH e <strong>descartamos a imagem</strong> em seguida.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Nome completo (como na CNH)</label>
+                <input
+                  type="text"
+                  required
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value.toUpperCase())}
+                  placeholder="JOÃO DA SILVA"
+                  className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-sm font-medium">CPF</label>
+                  <input
+                    type="text"
+                    required
+                    inputMode="numeric"
+                    value={cpf}
+                    onChange={(e) => setCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                    maxLength={14}
+                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Nº da CNH</label>
+                  <input
+                    type="text"
+                    required
+                    inputMode="numeric"
+                    value={cnh}
+                    onChange={(e) => setCnh(e.target.value)}
+                    placeholder="00000000000"
+                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-sm font-medium">Endereço completo</label>
@@ -80,7 +185,7 @@ export default function DadosPage({ params }: Props) {
               value={endereco}
               onChange={(e) => setEndereco(e.target.value)}
               placeholder="Rua, número, bairro, cidade-UF"
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -92,7 +197,7 @@ export default function DadosPage({ params }: Props) {
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               placeholder="Descreva o que aconteceu. Quanto mais específico, melhor."
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
             <p className="mt-1 text-xs text-slate-400">Mín. 10 caracteres.</p>
           </div>
@@ -105,9 +210,10 @@ export default function DadosPage({ params }: Props) {
               className="mt-0.5 h-4 w-4 rounded border-slate-300"
             />
             <span className="text-xs text-slate-600">
-              Autorizo o uso dos meus dados pessoais para a finalidade exclusiva de gerar o recurso administrativo
-              contratado, conforme a <a href="/privacidade" target="_blank" className="text-blue-600 underline">Política de Privacidade</a> e os <a href="/termos" target="_blank" className="text-blue-600 underline">Termos de Uso</a>. A imagem da CNH é descartada após extração;
-              dados ficam armazenados em servidor próprio, com acesso restrito.
+              Autorizo o uso dos meus dados pessoais para gerar o recurso administrativo, conforme a{' '}
+              <a href="/privacidade" target="_blank" className="text-blue-600 underline">Política de Privacidade</a> e os{' '}
+              <a href="/termos" target="_blank" className="text-blue-600 underline">Termos de Uso</a>.
+              A foto da CNH é descartada após extração.
             </span>
           </label>
 
@@ -115,7 +221,7 @@ export default function DadosPage({ params }: Props) {
 
           <button
             type="submit"
-            disabled={loading || !file || endereco.length < 5 || motivo.length < 10 || !lgpd}
+            disabled={loading || !podeEnviar}
             className="w-full rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             {loading ? 'Processando…' : 'Continuar pro pagamento'}

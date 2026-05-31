@@ -17,6 +17,7 @@ function brl(centavos: number | null | undefined): string {
 
 function promptTipoPorFase(fase: Fase | null): PromptTipo {
   if (fase === 'jari') return 'geracao_jari'
+  if (fase === 'cetran') return 'geracao_cetran'
   return 'geracao_defesa_previa'
 }
 
@@ -117,5 +118,6 @@ async function writePdf(orderId: string, texto: string, fase: Fase | null): Prom
 
 function faseLabel(fase: Fase | null): string {
   if (fase === 'jari') return 'RECURSO À JARI'
+  if (fase === 'cetran') return 'RECURSO AO CETRAN'
   return 'DEFESA PRÉVIA'
 }

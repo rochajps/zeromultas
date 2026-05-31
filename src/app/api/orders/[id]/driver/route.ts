@@ -1,3 +1,7 @@
+// Coleta dados do condutor. Aceita dois modos:
+// (A) upload da foto da CNH (IA extrai e descarta)
+// (B) digitação manual de nome/CPF/CNH (fallback quando foto falha ou usuário não quer)
+
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getActivePrompt } from '@/lib/prompts'
@@ -24,47 +28,75 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const formData = await req.formData()
     const file = formData.get('cnh_file')
+    const modoManual = formData.get('modo') === 'manual'
     const endereco = (formData.get('endereco') ?? '').toString().trim()
     const motivo = (formData.get('motivo_injustica') ?? '').toString().trim()
     const consentimento = formData.get('consentimento_lgpd') === 'true' || formData.get('consentimento_lgpd') === 'on'
 
-    if (!(file instanceof File)) return NextResponse.json({ error: 'CNH ausente.' }, { status: 400 })
-    if (file.size === 0) return NextResponse.json({ error: 'CNH vazia.' }, { status: 400 })
-    if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: 'Imagem da CNH acima de 8MB.' }, { status: 413 })
-    if (!ALLOWED_MIMES.test(file.type)) return NextResponse.json({ error: 'Use foto da CNH (jpeg/png).' }, { status: 415 })
     if (endereco.length < 5) return NextResponse.json({ error: 'Endereço inválido.' }, { status: 400 })
     if (motivo.length < 10) return NextResponse.json({ error: 'Descreva por que a multa é injusta (mín. 10 caracteres).' }, { status: 400 })
     if (!consentimento) return NextResponse.json({ error: 'É necessário aceitar a política de privacidade.' }, { status: 400 })
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const systemPrompt = await getActivePrompt('extracao_cnh')
+    let nome: string | null = null
+    let cpf: string | null = null
+    let num_cnh: string | null = null
 
-    const { data: cnh } = await extractCNH({ buffer, mimeType: file.type, systemPrompt })
-    // imagem da CNH descartada — não persistimos
+    if (modoManual) {
+      nome = (formData.get('nome') ?? '').toString().trim()
+      cpf = (formData.get('cpf') ?? '').toString().trim()
+      num_cnh = (formData.get('num_cnh') ?? '').toString().trim()
+      if (!nome || nome.length < 5) return NextResponse.json({ error: 'Nome inválido.' }, { status: 400 })
+      const cpfDigits = cpf.replace(/\D+/g, '')
+      if (cpfDigits.length !== 11) return NextResponse.json({ error: 'CPF deve ter 11 dígitos.' }, { status: 400 })
+      cpf = cpfDigits
+      if (!num_cnh || num_cnh.replace(/\D+/g, '').length < 9) {
+        return NextResponse.json({ error: 'Número da CNH inválido.' }, { status: 400 })
+      }
+      num_cnh = num_cnh.replace(/\D+/g, '')
+    } else {
+      // Modo foto
+      if (!(file instanceof File)) return NextResponse.json({ error: 'CNH ausente.' }, { status: 400 })
+      if (file.size === 0) return NextResponse.json({ error: 'CNH vazia.' }, { status: 400 })
+      if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: 'Imagem da CNH acima de 8MB.' }, { status: 413 })
+      if (!ALLOWED_MIMES.test(file.type)) return NextResponse.json({ error: 'Use foto da CNH (jpeg/png).' }, { status: 415 })
 
-    if (!cnh.nome || !cnh.cpf || !cnh.num_cnh) {
-      return NextResponse.json(
-        { error: 'Não conseguimos ler todos os campos da CNH. Envie uma foto mais nítida.' },
-        { status: 422 },
-      )
+      const buffer = Buffer.from(await file.arrayBuffer())
+      const systemPrompt = await getActivePrompt('extracao_cnh')
+      const { data: cnh } = await extractCNH({ buffer, mimeType: file.type, systemPrompt })
+      // imagem descartada
+
+      if (!cnh.nome || !cnh.cpf || !cnh.num_cnh) {
+        // Devolve com flag pra UI mostrar campos manuais
+        return NextResponse.json(
+          { error: 'Não conseguimos ler todos os campos da CNH.', requires_manual: true, parcial: cnh },
+          { status: 422 },
+        )
+      }
+      nome = cnh.nome
+      cpf = cnh.cpf.replace(/\D+/g, '')
+      num_cnh = cnh.num_cnh.replace(/\D+/g, '')
     }
 
     await prisma.$transaction([
       prisma.driverData.upsert({
         where: { order_id: orderId },
-        update: { nome: cnh.nome, cpf: cnh.cpf, num_cnh: cnh.num_cnh, endereco },
-        create: { order_id: orderId, nome: cnh.nome, cpf: cnh.cpf, num_cnh: cnh.num_cnh, endereco },
+        update: { nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco },
+        create: { order_id: orderId, nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco },
       }),
       prisma.driverInput.upsert({
         where: { order_id: orderId },
         update: { motivo_injustica: motivo, consentimento_lgpd: true, consentido_em: new Date() },
         create: { order_id: orderId, motivo_injustica: motivo, consentimento_lgpd: true, consentido_em: new Date() },
       }),
+      prisma.order.update({
+        where: { id: orderId },
+        data: { cnh_manual: modoManual, dados_em: new Date() },
+      }),
     ])
 
-    await logEvent({ tipo: 'dados_condutor', order_id: orderId, user_agent: ua, ip })
+    await logEvent({ tipo: modoManual ? 'cnh_manual' : 'dados_condutor', order_id: orderId, user_agent: ua, ip })
 
-    return NextResponse.json({ ok: true, nome: cnh.nome })
+    return NextResponse.json({ ok: true, nome })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[driver]', msg)

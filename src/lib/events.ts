@@ -3,14 +3,22 @@ import { createHash } from 'crypto'
 
 export type EventoTipo =
   | 'visita'
+  | 'visita_lp'
   | 'upload'
   | 'analise'
   | 'analise_falha'
+  | 'completou_dados_manuais'
+  | 'viu_resultado'
+  | 'abandono_resultado'
   | 'dados_condutor'
+  | 'cnh_manual'
+  | 'abandono_dados'
   | 'checkout'
+  | 'abandono_checkout'
   | 'pago'
   | 'gerado'
   | 'entregue'
+  | 'ativou_cetran'
 
 export interface LogEventArgs {
   tipo: EventoTipo

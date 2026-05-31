@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
   const ua = req.headers.get('user-agent')
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null
 
-  // Rate limit: 5 uploads por IP por hora (anti-abuso da chamada Anthropic)
   const rl = rateLimit(`upload:${ip ?? 'unknown'}`, 5, 60 * 60 * 1000)
   if (!rl.allowed) {
     return NextResponse.json(
@@ -50,63 +49,84 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())
+    const settings = await getSettings()
     const systemPrompt = await getActivePrompt('analise')
 
-    const settings = await getSettings()
     const { data: analise } = await analyzeFine({ buffer, mimeType: file.type, systemPrompt })
-    // imagem descartada — não persistimos buffer/arquivo
+    // imagem descartada
 
     const dataNotif = analise.data_notificacao ? new Date(analise.data_notificacao) : null
     const dataInfr = analise.data_infracao ? new Date(analise.data_infracao) : null
 
-    const phase = routePhase({
-      tipo_notificacao: analise.tipo_notificacao,
-      data_notificacao: dataNotif,
-      prazoDias: settings.prazo_dias,
-    })
+    // === Regras anti-trava ===
+    // Se IA não identificou tipo, assumimos NA. Se não tem data, marcamos data_missing
+    // e DEIXAMOS o usuário completar na próxima tela (não vamos pra 'vencido' às cegas).
+    const tipoOriginal = analise.tipo_notificacao
+    const tipoEfetivo = tipoOriginal === 'desconhecido' ? 'NA' : tipoOriginal
+    const dataMissing = !dataNotif
+    const valorMissing = !analise.valor_multa_centavos
+
+    let fase: 'defesa_previa' | 'jari' | 'vencido' = 'defesa_previa'
+    let prazo_status: 'valido' | 'vencido' = 'valido'
+    let prazo_limite: Date | null = null
+    let diasRestantes: number | null = null
+
+    if (!dataMissing && analise.is_multa) {
+      const phase = routePhase({
+        tipo_notificacao: tipoEfetivo,
+        data_notificacao: dataNotif,
+        prazoDias: settings.prazo_dias,
+      })
+      fase = phase.fase
+      prazo_status = phase.prazo_status
+      prazo_limite = phase.prazo_limite
+      diasRestantes = phase.dias_restantes
+
+      const bloqueiaPrazo =
+        settings.cobrar_proximo_vencimento_dias > 0 &&
+        diasRestantes != null &&
+        diasRestantes < settings.cobrar_proximo_vencimento_dias
+      if (bloqueiaPrazo) {
+        fase = 'vencido'
+        prazo_status = 'vencido'
+      }
+    }
 
     const score = computeScore({
       vicio_forte: analise.vicio_forte,
-      prazo_status: phase.prazo_status,
+      prazo_status,
       is_multa: analise.is_multa,
       config: settings,
     })
 
-    // Bloqueia venda se faltam menos de X dias pro vencimento (regra configurável)
-    const bloqueiaProximoVencimento =
-      settings.cobrar_proximo_vencimento_dias > 0 &&
-      phase.dias_restantes != null &&
-      phase.dias_restantes < settings.cobrar_proximo_vencimento_dias
-    const faseEfetiva = bloqueiaProximoVencimento ? 'vencido' : phase.fase
-    const prazoStatusEfetivo = bloqueiaProximoVencimento ? 'vencido' : phase.prazo_status
-
     let preco_centavos: number | null = null
     let faixa_id: number | null = null
-    let tier_label: string | null = null
-    if (analise.valor_multa_centavos && faseEfetiva !== 'vencido') {
+    if (analise.valor_multa_centavos && fase !== 'vencido') {
       const tiers = await prisma.priceTier.findMany({ where: { ativo: true } })
       const pricing = pickTier(analise.valor_multa_centavos, tiers)
       if (pricing) {
         preco_centavos = pricing.preco_centavos
         faixa_id = pricing.tier.id
-        tier_label = pricing.tier.faixa
       }
     }
 
     const order = await prisma.order.create({
       data: {
-        status: faseEfetiva === 'vencido' ? 'vencido' : 'analisado',
+        status: fase === 'vencido' ? 'vencido' : 'analisado',
         valor_multa_centavos: analise.valor_multa_centavos ?? null,
+        valor_missing: valorMissing,
+        data_missing: dataMissing,
         faixa_id,
         preco_centavos,
-        fase: faseEfetiva,
-        prazo_limite: phase.prazo_limite,
-        prazo_status: prazoStatusEfetivo,
+        fase,
+        prazo_limite,
+        prazo_status,
+        analisado_em: new Date(),
         ...utm,
         fine_data: {
           create: {
             is_multa: analise.is_multa,
-            tipo_notificacao: analise.tipo_notificacao,
+            tipo_notificacao: tipoEfetivo,
             data_notificacao: dataNotif,
             data_infracao: dataInfr,
             num_ait: analise.num_ait,
@@ -131,24 +151,32 @@ export async function POST(req: NextRequest) {
       order_id: order.id,
       user_agent: ua,
       ip,
-      metadata: { fase: phase.fase, score: score.score, vicio_forte: analise.vicio_forte },
+      metadata: {
+        fase,
+        score: score.score,
+        vicio_forte: analise.vicio_forte,
+        valor_missing: valorMissing,
+        data_missing: dataMissing,
+        tipo_assumido: tipoOriginal === 'desconhecido' ? 'NA' : undefined,
+      },
     })
 
     return NextResponse.json({
       orderId: order.id,
       is_multa: analise.is_multa,
-      fase: faseEfetiva,
-      prazo_status: prazoStatusEfetivo,
-      prazo_limite: phase.prazo_limite?.toISOString() ?? null,
-      dias_restantes: phase.dias_restantes,
+      fase,
+      prazo_status,
+      prazo_limite: prazo_limite?.toISOString() ?? null,
+      dias_restantes: diasRestantes,
       score: score.score,
       score_faixa: score.faixa,
       score_mensagem: score.mensagem,
       vicio_forte: analise.vicio_forte,
       vicio_razao: analise.vicio_razao,
       valor_multa_centavos: analise.valor_multa_centavos ?? null,
+      valor_missing: valorMissing,
+      data_missing: dataMissing,
       preco_centavos,
-      faixa_label: tier_label,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

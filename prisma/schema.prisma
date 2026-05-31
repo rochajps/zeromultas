@@ -22,6 +22,7 @@ enum OrderStatus {
 enum Fase {
   defesa_previa
   jari
+  cetran
   vencido
 }
 
@@ -40,6 +41,7 @@ enum PromptTipo {
   analise
   geracao_defesa_previa
   geracao_jari
+  geracao_cetran
   extracao_cnh
   extracao_completa
 }
@@ -62,6 +64,12 @@ model Order {
   utm_term              String?
   created_at            DateTime      @default(now())
   updated_at            DateTime      @updatedAt
+  data_missing          Boolean       @default(false)
+  valor_missing         Boolean       @default(false)
+  cnh_manual            Boolean       @default(false)
+  analisado_em          DateTime?
+  dados_em              DateTime?
+  checkout_em           DateTime?
   paid_at               DateTime?
   generated_at          DateTime?
 
