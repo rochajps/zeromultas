@@ -245,10 +245,28 @@ function Uploader() {
 
   const resetTurnstile = useCallback(() => {
     setTurnstileToken('')
-    const w = window as unknown as { turnstile?: { reset: (id: string) => void } }
-    if (w.turnstile && widgetIdRef.current) {
-      try { w.turnstile.reset(widgetIdRef.current) } catch {}
+    const w = window as unknown as {
+      turnstile?: {
+        remove: (id: string) => void
+        render: (el: HTMLElement, opts: Record<string, unknown>) => string
+      }
     }
+    if (!w.turnstile || !turnstileRef.current) return
+    // Remove o widget antigo e cria um novo — garante token fresco
+    if (widgetIdRef.current) {
+      try { w.turnstile.remove(widgetIdRef.current) } catch {}
+      widgetIdRef.current = null
+    }
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+    if (!siteKey) return
+    widgetIdRef.current = w.turnstile.render(turnstileRef.current, {
+      sitekey: siteKey,
+      callback: (token: string) => setTurnstileToken(token),
+      'expired-callback': () => setTurnstileToken(''),
+      'error-callback': () => setTurnstileToken(''),
+      theme: 'light',
+      size: 'flexible',
+    })
   }, [])
 
   const upload = useCallback(
@@ -256,10 +274,27 @@ function Uploader() {
       setError(null)
       setSelected(file)
       setLoading(true)
+
+      // Espera até 3s pelo token Turnstile renovar (se acabou de submeter outro)
+      let tokenAtual = turnstileToken
+      if (!tokenAtual) {
+        for (let i = 0; i < 30 && !tokenAtual; i++) {
+          await new Promise((r) => setTimeout(r, 100))
+          // re-read from state — useState não atualiza no closure, ler do DOM via getResponse
+          const w = window as unknown as { turnstile?: { getResponse: (id: string) => string } }
+          if (w.turnstile && widgetIdRef.current) {
+            try {
+              const t = w.turnstile.getResponse(widgetIdRef.current)
+              if (t) tokenAtual = t
+            } catch {}
+          }
+        }
+      }
+
       try {
         const fd = new FormData()
         fd.append('file', file)
-        fd.append('turnstileToken', turnstileToken)
+        fd.append('turnstileToken', tokenAtual)
         fd.append('form_started_at', String(formStartedAt))
         fd.append('website', '')
         Object.entries(utm).forEach(([k, v]) => fd.append(k, v))
