@@ -44,6 +44,7 @@ export default function DadosPage({ params }: Props) {
   const [lgpd, setLgpd] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [triedSubmit, setTriedSubmit] = useState(false)
   const [buscandoCep, setBuscandoCep] = useState(false)
 
   useEffect(() => {
@@ -79,6 +80,8 @@ export default function DadosPage({ params }: Props) {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setTriedSubmit(true)
+    if (!podeEnviar) return
     setLoading(true)
     try {
       const fd = new FormData()
@@ -213,8 +216,11 @@ export default function DadosPage({ params }: Props) {
                     onChange={(e) => setCpf(maskCpf(e.target.value))}
                     placeholder="000.000.000-00"
                     maxLength={14}
-                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+                    className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm font-mono ${triedSubmit && cpfDigits.length !== 11 ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                   />
+                  {triedSubmit && cpfDigits.length !== 11 && cpfDigits.length > 0 && (
+                    <p className="mt-1 text-xs text-red-600">CPF incompleto ({cpfDigits.length}/11 dígitos)</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium">Nº da CNH</label>
@@ -225,8 +231,11 @@ export default function DadosPage({ params }: Props) {
                     value={cnh}
                     onChange={(e) => setCnh(maskCnh(e.target.value))}
                     placeholder="00000000000"
-                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+                    className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm font-mono ${triedSubmit && cnhDigits.length < 9 ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                   />
+                  {triedSubmit && cnhDigits.length < 9 && cnhDigits.length > 0 && (
+                    <p className="mt-1 text-xs text-red-600">CNH incompleta ({cnhDigits.length} dígitos, mín. 9)</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -244,8 +253,11 @@ export default function DadosPage({ params }: Props) {
                 onBlur={(e) => buscarCep(e.target.value)}
                 placeholder="00000-000"
                 maxLength={9}
-                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+                className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm font-mono ${triedSubmit && cepDigits.length !== 8 ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
               />
+              {triedSubmit && cepDigits.length !== 8 && cepDigits.length > 0 && (
+                <p className="mt-1 text-xs text-red-600">CEP incompleto ({cepDigits.length}/8 dígitos)</p>
+              )}
               {buscandoCep && <p className="mt-1 text-xs text-slate-400">Buscando endereço…</p>}
             </div>
             <div>
@@ -258,8 +270,11 @@ export default function DadosPage({ params }: Props) {
                 onChange={(e) => setWhatsapp(maskPhone(e.target.value))}
                 placeholder="(11) 99999-9999"
                 maxLength={15}
-                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+                className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm font-mono ${triedSubmit && whatsappDigits.length < 10 ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
               />
+              {triedSubmit && whatsappDigits.length > 0 && whatsappDigits.length < 10 && (
+                <p className="mt-1 text-xs text-red-600">WhatsApp incompleto ({whatsappDigits.length} dígitos, mín. 10 com DDD)</p>
+              )}
             </div>
           </div>
 

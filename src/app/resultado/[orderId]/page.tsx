@@ -55,10 +55,15 @@ export default async function ResultadoPage({ params }: PageProps) {
     }
   }
 
+  // Se admin liberou pedidos vencidos, o score também ignora o status vencido
+  const prazoStatusParaScore: 'valido' | 'vencido' = settings.permitir_vencido
+    ? 'valido'
+    : (prazoStatus ?? 'valido')
+
   const score = fineData
     ? computeScore({
         vicio_forte: fineData.vicio_forte ?? false,
-        prazo_status: prazoStatus ?? 'valido',
+        prazo_status: prazoStatusParaScore,
         is_multa: fineData.is_multa ?? false,
         config: settings,
       })
