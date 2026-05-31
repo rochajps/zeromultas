@@ -10,6 +10,9 @@ export interface SettingsValues {
   msg_score_vencido: string
   msg_nao_eh_multa: string
   cobrar_proximo_vencimento_dias: number
+  permitir_vencido: boolean
+  permitir_cetran_direto: boolean
+  msg_vencido_alternativa: string
 }
 
 export const DEFAULT_SETTINGS: SettingsValues = {
@@ -25,6 +28,10 @@ export const DEFAULT_SETTINGS: SettingsValues = {
     'O prazo administrativo já encerrou. Não cobramos por recurso intempestivo — não há viabilidade nesta fase.',
   msg_nao_eh_multa: 'Não conseguimos identificar uma multa válida nesta imagem.',
   cobrar_proximo_vencimento_dias: 0,
+  permitir_vencido: false,
+  permitir_cetran_direto: true,
+  msg_vencido_alternativa:
+    'Se você já recebeu a decisão negativa da JARI, ainda tem 30 dias contados da ciência pra recorrer ao CETRAN (3ª instância). A gente gera essa peça também.',
 }
 
 // Cache em memória (single PM2 fork) — TTL curto pra refletir mudanças no admin sem reload manual.

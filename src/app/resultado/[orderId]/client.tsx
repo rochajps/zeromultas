@@ -154,7 +154,7 @@ export function CompleteDataForm({
 // ============================================================
 // CTA pra CETRAN quando prazo principal venceu
 // ============================================================
-export function CetranCta({ orderId }: { orderId: string }) {
+export function CetranCta({ orderId, mensagem }: { orderId: string; mensagem?: string }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
@@ -174,8 +174,7 @@ export function CetranCta({ orderId }: { orderId: string }) {
     <div className="mt-4 rounded-2xl border-2 border-blue-300 bg-blue-50 p-6">
       <h2 className="text-lg font-bold text-brand-blue-dark">Quer tentar via CETRAN?</h2>
       <p className="mt-2 text-sm text-slate-700">
-        Se você <strong>já recebeu a decisão negativa da JARI</strong>, ainda tem 30 dias contados da ciência pra
-        recorrer ao <strong>CETRAN</strong> (3ª instância). A gente gera essa peça também.
+        {mensagem ?? 'Se você já recebeu a decisão negativa da JARI, ainda tem 30 dias contados da ciência pra recorrer ao CETRAN (3ª instância). A gente gera essa peça também.'}
       </p>
 
       {!confirmed ? (

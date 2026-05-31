@@ -31,7 +31,10 @@ export default async function ResultadoPage({ params }: PageProps) {
   let prazoStatus: 'valido' | 'vencido' | null = order.prazo_status
   let prazoLimite: Date | null = order.prazo_limite
 
-  if (recalculavel && fineData && !order.data_missing) {
+  // CETRAN ativado manualmente: respeitar e não recalcular fase
+  const isCetranAtivo = order.fase === 'cetran'
+
+  if (recalculavel && !isCetranAtivo && fineData && !order.data_missing) {
     const phase = routePhase({
       tipo_notificacao: fineData.tipo_notificacao,
       data_notificacao: fineData.data_notificacao,
@@ -62,7 +65,10 @@ export default async function ResultadoPage({ params }: PageProps) {
     : null
 
   const precisaCompletar = order.valor_missing || order.data_missing
-  const vencido = fase === 'vencido'
+  // Regra do admin: permitir_vencido força fluxo normal mesmo se prazo passou
+  const vencido = fase === 'vencido' && !settings.permitir_vencido
+  // Se fase salva é 'cetran', mantém pra exibir como tal
+  if (isCetranAtivo) fase = 'cetran' 
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -83,7 +89,9 @@ export default async function ResultadoPage({ params }: PageProps) {
         ) : vencido ? (
           <>
             <Vencido prazoLimite={prazoLimite} mensagem={settings.msg_score_vencido} />
-            <CetranCta orderId={order.id} />
+            {settings.permitir_cetran_direto && (
+              <CetranCta orderId={order.id} mensagem={settings.msg_vencido_alternativa} />
+            )}
           </>
         ) : (
           <Diagnostico

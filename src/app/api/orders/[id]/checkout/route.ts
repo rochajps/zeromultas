@@ -26,18 +26,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       include: { fine_data: true, driver_data: true, driver_input: true, price_tier: true },
     })
     if (!order) return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 })
-    if (!order.driver_data || !order.driver_input) {
+    if (!order.driver_data) {
       return NextResponse.json({ error: 'Complete os dados do condutor antes do checkout.' }, { status: 400 })
     }
 
-    // Recalcular fase + preço com as regras ATUAIS antes de qualquer cobrança.
-    // Isso garante que mudanças no /admin/regras se aplicam mesmo a pedidos antigos.
     const settings = await getSettings()
     let faseAtual = order.fase
     let precoAtual = order.preco_centavos
     let faixaIdAtual = order.faixa_id
 
-    if (order.fine_data && !order.data_missing) {
+    // CETRAN: respeitar ativação manual. Não recalcular.
+    const isCetran = order.fase === 'cetran'
+
+    // Recalcular fase só pra defesa_previa/jari/vencido
+    if (!isCetran && order.fine_data && !order.data_missing) {
       const phase = routePhase({
         tipo_notificacao: order.fine_data.tipo_notificacao,
         data_notificacao: order.fine_data.data_notificacao,
@@ -50,7 +52,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         phase.dias_restantes < settings.cobrar_proximo_vencimento_dias
       if (bloqueio) faseAtual = 'vencido'
     }
-    if (order.valor_multa_centavos && faseAtual !== 'vencido') {
+
+    if (order.valor_multa_centavos) {
       const tiers = await prisma.priceTier.findMany({ where: { ativo: true } })
       const pricing = pickTier(order.valor_multa_centavos, tiers)
       if (pricing) {
@@ -59,14 +62,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    if (faseAtual === 'vencido') {
-      return NextResponse.json({ error: 'Pedido com prazo vencido — não cobramos.' }, { status: 409 })
-    }
-    if (!precoAtual || !faixaIdAtual) {
-      return NextResponse.json({ error: 'Preço não definido. Reanalise a multa.' }, { status: 400 })
+    // Aplicar regra do admin: permitir_vencido
+    if (faseAtual === 'vencido' && !settings.permitir_vencido) {
+      return NextResponse.json({ error: 'Pedido com prazo vencido — venda bloqueada nas regras.' }, { status: 409 })
     }
 
-    // Salva a fase e preço efetivos antes de criar a cobrança
+    if (!precoAtual || !faixaIdAtual) {
+      return NextResponse.json({ error: 'Preço não definido. Reanalise a multa ou informe o valor.' }, { status: 400 })
+    }
+
     if (faseAtual !== order.fase || precoAtual !== order.preco_centavos || faixaIdAtual !== order.faixa_id) {
       await prisma.order.update({
         where: { id: orderId },
@@ -74,7 +78,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       })
     }
 
-    // Idempotência: já existe cobrança PIX pendente
     if (order.tribopay_hash && order.status === 'aguardando_pagamento') {
       return NextResponse.json({
         orderId,
@@ -88,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       amount_centavos: precoAtual,
       order_id: orderId,
       description: `Recurso de multa #${orderId.slice(0, 8)}`,
-      payer: { name: order.driver_data.nome, document: order.driver_data.cpf, email: null, phone: null },
+      payer: { name: order.driver_data.nome, document: order.driver_data.cpf, email: null, phone: order.driver_data.whatsapp ?? null },
       webhook_url: publicUrl('/api/webhook/tribopay'),
     })
 
@@ -104,7 +107,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     })
 
-    await logEvent({ tipo: 'checkout', order_id: orderId, user_agent: ua, ip, metadata: { hash: charge.hash } })
+    await logEvent({ tipo: 'checkout', order_id: orderId, user_agent: ua, ip, metadata: { hash: charge.hash, fase: faseAtual } })
 
     return NextResponse.json({
       orderId,
