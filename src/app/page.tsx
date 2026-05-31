@@ -192,6 +192,7 @@ function Uploader() {
   const [turnstileToken, setTurnstileToken] = useState<string>('')
   const [formStartedAt] = useState<number>(() => Date.now())
   const turnstileRef = useRef<HTMLDivElement>(null)
+  const widgetIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (document.querySelector('script[data-turnstile]')) return
@@ -208,7 +209,7 @@ function Uploader() {
     let cancelled = false
     const tryRender = () => {
       if (cancelled) return
-      const w = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; remove: (id: string) => void } }
+      const w = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; remove: (id: string) => void; reset: (id: string) => void } }
       const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
       if (w.turnstile && turnstileRef.current && siteKey && !widgetId) {
         widgetId = w.turnstile.render(turnstileRef.current, {
@@ -219,6 +220,7 @@ function Uploader() {
           theme: 'light',
           size: 'flexible',
         })
+        widgetIdRef.current = widgetId
         return
       }
       setTimeout(tryRender, 200)
