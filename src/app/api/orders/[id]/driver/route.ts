@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null
 
   try {
-    const order = await prisma.order.findUnique({ where: { id: orderId } })
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { fine_data: true } })
     if (!order) return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 })
     // Não bloqueamos aqui por fase vencida — a decisão fica pro /checkout (que recalcula com regras atuais).
 
@@ -30,11 +30,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const whatsapp = (formData.get('whatsapp') ?? '').toString().replace(/\D+/g, '') || null
     const motivo = (formData.get('motivo_injustica') ?? '').toString().trim()
     const consentimento = formData.get('consentimento_lgpd') === 'true' || formData.get('consentimento_lgpd') === 'on'
+    const placaInput = (formData.get('placa') ?? '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
 
     if (endereco.length < 5) return NextResponse.json({ error: 'Endereço inválido.' }, { status: 400 })
     if (cepRaw.length !== 8) return NextResponse.json({ error: 'CEP inválido.' }, { status: 400 })
     if (!whatsapp || whatsapp.length < 10) return NextResponse.json({ error: 'WhatsApp é obrigatório (mín. 10 dígitos com DDD).' }, { status: 400 })
     if (!consentimento) return NextResponse.json({ error: 'É necessário aceitar a política de privacidade.' }, { status: 400 })
+
+    // Placa: se FineData não tem, exigir do user
+    const placaExistente = order.fine_data?.placa ?? null
+    let placaFinal: string | null = placaExistente
+    if (!placaExistente) {
+      const re = /^[A-Z]{3}[0-9]{1}[A-Z0-9]{1}[0-9]{2}$/
+      if (!placaInput || !re.test(placaInput)) {
+        return NextResponse.json({ error: 'Placa do veículo é obrigatória (formato ABC1D23 ou ABC1234).' }, { status: 400 })
+      }
+      placaFinal = placaInput
+    }
 
     let nome: string | null = null
     let cpf: string | null = null
@@ -74,7 +86,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       num_cnh = cnh.num_cnh.replace(/\D+/g, '')
     }
 
+    const updateFinePlaca = !placaExistente && placaFinal
+      ? [prisma.fineData.update({ where: { order_id: orderId }, data: { placa: placaFinal } })]
+      : []
+
     await prisma.$transaction([
+      ...updateFinePlaca,
       prisma.driverData.upsert({
         where: { order_id: orderId },
         update: { nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco, cep: cepRaw, whatsapp },

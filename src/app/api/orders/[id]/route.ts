@@ -56,6 +56,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     prazo_limite: order!.prazo_limite?.toISOString() ?? null,
     valor_multa_centavos: order!.valor_multa_centavos,
     preco_centavos: order!.preco_centavos,
+    placa: order!.fine_data?.placa ?? null,
+    placa_missing: !order!.fine_data?.placa,
     paid_at: order!.paid_at?.toISOString() ?? null,
     generated_at: order!.generated_at?.toISOString() ?? null,
     has_recurso: !!order!.recurso,

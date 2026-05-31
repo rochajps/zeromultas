@@ -25,6 +25,13 @@ function maskPhone(v: string): string {
     return d.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2')
   return d.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2')
 }
+function maskPlaca(v: string): string {
+  return v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
+}
+function isPlacaValida(v: string): boolean {
+  return /^[A-Z]{3}[0-9]{1}[A-Z0-9]{1}[0-9]{2}$/.test(v)
+}
+
 function maskCnh(v: string): string {
   return v.replace(/\D+/g, '').slice(0, 11)
 }
@@ -45,7 +52,18 @@ export default function DadosPage({ params }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [triedSubmit, setTriedSubmit] = useState(false)
+  const [placaNeeded, setPlacaNeeded] = useState(false)
+  const [placa, setPlaca] = useState('')
   const [buscandoCep, setBuscandoCep] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/orders/${params.orderId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.placa_missing) setPlacaNeeded(true)
+      })
+      .catch(() => {})
+  }, [params.orderId])
 
   useEffect(() => {
     const onBeforeUnload = () => {
@@ -98,6 +116,7 @@ export default function DadosPage({ params }: Props) {
       fd.append('modo', modo)
       fd.append('endereco', endereco)
       fd.append('cep', cep.replace(/\D+/g, ''))
+      if (placaNeeded) fd.append('placa', placa)
       if (whatsapp) fd.append('whatsapp', whatsapp.replace(/\D+/g, ''))
       if (motivo) fd.append('motivo_injustica', motivo)
       fd.append('consentimento_lgpd', lgpd ? 'true' : 'false')
@@ -143,10 +162,12 @@ export default function DadosPage({ params }: Props) {
   const cepDigits = cep.replace(/\D+/g, '')
 
   const whatsappDigits = whatsapp.replace(/\D+/g, '')
+  const placaOk = !placaNeeded || isPlacaValida(placa)
   const podeEnviar =
     endereco.length >= 5 &&
     cepDigits.length === 8 &&
     whatsappDigits.length >= 10 &&
+    placaOk &&
     lgpd &&
     (modo === 'foto'
       ? !!file
@@ -251,6 +272,26 @@ export default function DadosPage({ params }: Props) {
             </div>
           )}
 
+          {placaNeeded && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <label className="text-sm font-medium text-amber-900">Placa do veículo</label>
+              <p className="text-xs text-amber-700">Não conseguimos ler a placa na imagem. Confirme abaixo (formato ABC1D23 ou ABC1234).</p>
+              <input
+                type="text"
+                required
+                inputMode="text"
+                value={placa}
+                onChange={(e) => setPlaca(maskPlaca(e.target.value))}
+                placeholder="ABC1D23"
+                maxLength={7}
+                className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm font-mono tracking-widest uppercase ${triedSubmit && !isPlacaValida(placa) ? 'border-red-400 bg-red-50' : 'border-amber-300'}`}
+              />
+              {triedSubmit && placa.length > 0 && !isPlacaValida(placa) && (
+                <p className="mt-1 text-xs text-red-600">Placa inválida. Use o formato ABC1D23 (Mercosul) ou ABC1234 (antiga).</p>
+              )}
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="text-sm font-medium">CEP</label>
@@ -342,6 +383,7 @@ export default function DadosPage({ params }: Props) {
             if (endereco.length < 5) faltam.push('endereço')
             if (cepDigits.length !== 8) faltam.push('CEP completo')
             if (whatsappDigits.length < 10) faltam.push('WhatsApp')
+            if (placaNeeded && !isPlacaValida(placa)) faltam.push('placa do veículo')
             if (!lgpd) faltam.push('aceitar a política')
             if (modo === 'foto' && !file) faltam.push('foto da CNH')
             if (modo === 'manual') {
