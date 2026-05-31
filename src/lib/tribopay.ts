@@ -182,7 +182,7 @@ async function statusLive(hash: string): Promise<ChargeStatus> {
   }
   const json = JSON.parse(text) as Record<string, unknown>
   const data = (json.data ?? json) as Record<string, unknown>
-  const raw = String(data.status ?? '').toLowerCase()
+  const raw = String(data.payment_status ?? data.status ?? '').toLowerCase()
 
   const status: ChargeStatus['status'] =
     raw === 'paid' || raw === 'approved' || raw === 'pago'
