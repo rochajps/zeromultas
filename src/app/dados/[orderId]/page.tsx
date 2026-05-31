@@ -81,7 +81,17 @@ export default function DadosPage({ params }: Props) {
     e.preventDefault()
     setError(null)
     setTriedSubmit(true)
-    if (!podeEnviar) return
+    if (!podeEnviar) {
+      // Scroll automático pro primeiro campo em erro + focus
+      setTimeout(() => {
+        const firstErr = document.querySelector('input.border-red-400, .border-red-400 input') as HTMLElement | null
+        if (firstErr) {
+          firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          ;(firstErr as HTMLInputElement).focus?.()
+        }
+      }, 60)
+      return
+    }
     setLoading(true)
     try {
       const fd = new FormData()

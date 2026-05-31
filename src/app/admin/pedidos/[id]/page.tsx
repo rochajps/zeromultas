@@ -1,10 +1,48 @@
 import Link from 'next/link'
-import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { notFound } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
+import { formatDateBR, formatDateTimeBR } from '@/lib/format'
+import { generateRecursoForOrder } from '@/lib/recurso'
+import { logEvent } from '@/lib/events'
+import { randomBytes } from 'crypto'
 
 export const dynamic = 'force-dynamic'
+
+async function marcarPagoManual(formData: FormData) {
+  'use server'
+  const orderId = String(formData.get('orderId'))
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { recurso: true } })
+  if (!order) return
+
+  const downloadToken = order.download_token ?? randomBytes(24).toString('hex')
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status: 'pago',
+      paid_at: new Date(),
+      download_token: downloadToken,
+    },
+  })
+  await logEvent({ tipo: 'pago', order_id: orderId, metadata: { source: 'admin_manual' } })
+
+  if (!order.recurso) {
+    generateRecursoForOrder(orderId).catch((e) => console.error('[admin:gen]', e))
+  }
+  revalidatePath(`/admin/pedidos/${orderId}`)
+}
+
+async function gerarRecursoManual(formData: FormData) {
+  'use server'
+  const orderId = String(formData.get('orderId'))
+  try {
+    await generateRecursoForOrder(orderId)
+  } catch (e) {
+    console.error('[admin:gen-manual]', e)
+  }
+  revalidatePath(`/admin/pedidos/${orderId}`)
+}
 
 export default async function PedidoDetailPage({ params }: { params: { id: string } }) {
   const order = await prisma.order.findUnique({
@@ -12,6 +50,9 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
     include: { fine_data: true, driver_data: true, driver_input: true, recurso: true, price_tier: true },
   })
   if (!order) notFound()
+
+  const isPago = ['pago', 'gerado', 'entregue'].includes(order.status)
+  const temRecurso = !!order.recurso
 
   return (
     <div className="space-y-6">
@@ -22,6 +63,40 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
         <p className="text-sm text-slate-600">
           Status: <strong>{order.status}</strong> · Fase: <strong>{order.fase}</strong> · Criado em {formatDateTimeBR(order.created_at)}
         </p>
+      </div>
+
+      {/* Ações manuais admin */}
+      <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-5">
+        <h2 className="font-semibold text-amber-900">⚙️ Ações manuais (backup)</h2>
+        <p className="mt-1 text-xs text-amber-700">
+          Use só quando o pagamento não foi reconhecido automaticamente ou pra forçar geração de recurso.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          {!isPago && (
+            <form action={marcarPagoManual}>
+              <input type="hidden" name="orderId" value={order.id} />
+              <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                💰 Marcar como pago (manual)
+              </button>
+            </form>
+          )}
+          {isPago && (
+            <form action={gerarRecursoManual}>
+              <input type="hidden" name="orderId" value={order.id} />
+              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                {temRecurso ? '🔄 Regenerar recurso' : '📝 Gerar recurso agora'}
+              </button>
+            </form>
+          )}
+          {!isPago && (
+            <form action={gerarRecursoManual}>
+              <input type="hidden" name="orderId" value={order.id} />
+              <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                📝 Gerar recurso (sem cobrar)
+              </button>
+            </form>
+          )}
+        </div>
       </div>
 
       <Section title="Dados da multa">
@@ -48,15 +123,17 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
             ['Nome', order.driver_data.nome],
             ['CPF', order.driver_data.cpf],
             ['CNH', order.driver_data.num_cnh],
+            ['CEP', order.driver_data.cep],
+            ['WhatsApp', order.driver_data.whatsapp],
             ['Endereço', order.driver_data.endereco],
           ]} />
         ) : <Empty />}
       </Section>
 
       <Section title="Motivo do condutor">
-        {order.driver_input ? (
+        {order.driver_input?.motivo_injustica ? (
           <p className="whitespace-pre-wrap text-sm">{order.driver_input.motivo_injustica}</p>
-        ) : <Empty />}
+        ) : <p className="text-sm text-slate-400">Não preenchido.</p>}
       </Section>
 
       <Section title="Pagamento">
