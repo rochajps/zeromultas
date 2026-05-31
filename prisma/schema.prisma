@@ -243,3 +243,34 @@ enum ScoreBand {
   media
   moderada_baixa
 }
+
+model AnalysisCache {
+  hash       String   @id
+  resultado  Json
+  cnt_hits   Int      @default(0)
+  created_at DateTime @default(now())
+  expira_em  DateTime
+
+  @@index([expira_em])
+}
+
+model UsageCounter {
+  id         Int      @id @default(autoincrement())
+  janela     String   @unique
+  total      Int      @default(0)
+  updated_at DateTime @updatedAt
+}
+
+model SecurityEvent {
+  id          Int      @id @default(autoincrement())
+  acao        String
+  ip_hash     String?
+  session_id  String?
+  fingerprint String?
+  regra       String?
+  metadata    Json?
+  created_at  DateTime @default(now())
+
+  @@index([acao, created_at])
+  @@index([ip_hash])
+}

@@ -183,6 +183,47 @@ function Uploader() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<File | null>(null)
   const [utm, setUtm] = useState<Record<string, string>>({})
+  const [turnstileToken, setTurnstileToken] = useState<string>('')
+  const [formStartedAt] = useState<number>(() => Date.now())
+  const turnstileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (document.querySelector('script[data-turnstile]')) return
+    const sc = document.createElement('script')
+    sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+    sc.async = true
+    sc.defer = true
+    sc.setAttribute('data-turnstile', 'true')
+    document.head.appendChild(sc)
+  }, [])
+
+  useEffect(() => {
+    let widgetId: string | null = null
+    let cancelled = false
+    const tryRender = () => {
+      if (cancelled) return
+      const w = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; remove: (id: string) => void } }
+      const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+      if (w.turnstile && turnstileRef.current && siteKey && !widgetId) {
+        widgetId = w.turnstile.render(turnstileRef.current, {
+          sitekey: siteKey,
+          callback: (token: string) => setTurnstileToken(token),
+          'expired-callback': () => setTurnstileToken(''),
+          'error-callback': () => setTurnstileToken(''),
+          theme: 'light',
+          size: 'flexible',
+        })
+        return
+      }
+      setTimeout(tryRender, 200)
+    }
+    tryRender()
+    return () => {
+      cancelled = true
+      const w = window as unknown as { turnstile?: { remove: (id: string) => void } }
+      if (widgetId && w.turnstile) w.turnstile.remove(widgetId)
+    }
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -202,6 +243,9 @@ function Uploader() {
       try {
         const fd = new FormData()
         fd.append('file', file)
+        fd.append('turnstileToken', turnstileToken)
+        fd.append('form_started_at', String(formStartedAt))
+        fd.append('website', '')
         Object.entries(utm).forEach(([k, v]) => fd.append(k, v))
         const res = await fetch('/api/upload', { method: 'POST', body: fd })
         const data: UploadResult | { error: string } = await res.json()
@@ -213,7 +257,7 @@ function Uploader() {
         setSelected(null)
       }
     },
-    [router, utm],
+    [router, utm, turnstileToken, formStartedAt],
   )
 
   return (
@@ -302,6 +346,17 @@ function Uploader() {
             <p className="mt-5 flex items-center justify-center gap-1.5 text-xs text-slate-500">
               <LockIcon className="h-3.5 w-3.5" /> A imagem é processada e descartada — não guardamos seu arquivo.
             </p>
+
+          <div ref={turnstileRef} className="mt-3 flex justify-center" />
+
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            style={{ position: 'absolute', left: '-9999px', height: 0, width: 0, opacity: 0, pointerEvents: 'none' }}
+            aria-hidden="true"
+          />
 
             {error && (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-sm text-red-700">

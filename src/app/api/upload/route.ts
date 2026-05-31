@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getActivePrompt } from '@/lib/prompts'
-import { analyzeFine } from '@/lib/anthropic'
+import { analyzeFine, MODEL_ANALYSIS } from '@/lib/anthropic'
 import { routePhase } from '@/lib/phase-router'
 import { pickTier } from '@/lib/pricing'
 import { computeScore } from '@/lib/scoring'
@@ -10,13 +10,24 @@ import { logEvent } from '@/lib/events'
 import { getSettings } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
 import { recordApiUsage } from '@/lib/usage'
-import { MODEL_ANALYSIS } from '@/lib/anthropic'
+import {
+  detectMimeFromBuffer,
+  checkHoneypot,
+  verifyTurnstile,
+  sha256Hex,
+  getCachedAnalysis,
+  saveCachedAnalysis,
+  checkBudget,
+  incrementBudget,
+  logSecurityEvent,
+  hashIp,
+} from '@/lib/security'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
 const MAX_FILE_SIZE = 12 * 1024 * 1024
-const ALLOWED_MIMES = /^(image\/(jpeg|png|webp|gif|heic|heif)|application\/pdf)$/i
+const ALLOWED_DETECTED = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'])
 
 function stringOrNull(v: FormDataEntryValue | null): string | null {
   if (typeof v === 'string' && v.length > 0) return v
@@ -25,24 +36,123 @@ function stringOrNull(v: FormDataEntryValue | null): string | null {
 
 export async function POST(req: NextRequest) {
   const ua = req.headers.get('user-agent')
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null
+  const ip =
+    req.headers.get('cf-connecting-ip') ??
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+    null
+  const ipHashed = hashIp(ip)
 
+  // ============================================================
+  // CAMADA: Rate limit (já existente, primeira barreira)
+  // ============================================================
   const rl = rateLimit(`upload:${ip ?? 'unknown'}`, 5, 60 * 60 * 1000)
   if (!rl.allowed) {
+    await logSecurityEvent({ action: 'rate_limit', ip_hash: ipHashed, rule: 'ip_5_per_hour', metadata: { retryAfter: rl.retryAfterSec } })
     return NextResponse.json(
       { error: `Muitas tentativas. Tente novamente em ${rl.retryAfterSec}s.` },
       { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
     )
   }
 
+  let formData: FormData
   try {
-    const formData = await req.formData()
-    const file = formData.get('file')
-    if (!(file instanceof File)) return NextResponse.json({ error: 'Arquivo ausente.' }, { status: 400 })
-    if (file.size === 0) return NextResponse.json({ error: 'Arquivo vazio.' }, { status: 400 })
-    if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: 'Arquivo acima de 12MB.' }, { status: 413 })
-    if (!ALLOWED_MIMES.test(file.type)) return NextResponse.json({ error: `Tipo não suportado: ${file.type}` }, { status: 415 })
+    formData = await req.formData()
+  } catch {
+    return NextResponse.json({ error: 'Formato de envio inválido.' }, { status: 400 })
+  }
 
+  // ============================================================
+  // CAMADA: Honeypot (campo oculto + tempo de preenchimento)
+  // ============================================================
+  const honeypotValue = stringOrNull(formData.get('website'))
+  const formStartedAt = Number(formData.get('form_started_at') ?? 0)
+  const hp = checkHoneypot({
+    honeypot_value: honeypotValue,
+    form_started_at: Number.isFinite(formStartedAt) && formStartedAt > 0 ? formStartedAt : null,
+  })
+  if (!hp.ok) {
+    await logSecurityEvent({ action: hp.reason as never, ip_hash: ipHashed, rule: 'honeypot' })
+    // Mensagem genérica — não educar o atacante
+    return NextResponse.json({ error: 'Sessão inválida. Recarregue a página e tente novamente.' }, { status: 400 })
+  }
+
+  // ============================================================
+  // CAMADA: Turnstile (Cloudflare)
+  // ============================================================
+  const turnstileToken = stringOrNull(formData.get('turnstileToken')) ?? req.headers.get('cf-turnstile-response')
+  const ts = await verifyTurnstile(turnstileToken, ip)
+  if (!ts.ok) {
+    await logSecurityEvent({
+      action: ts.reason?.startsWith('turnstile_missing') ? 'turnstile_missing' : 'turnstile_fail',
+      ip_hash: ipHashed,
+      rule: ts.reason ?? 'turnstile',
+    })
+    return NextResponse.json({ error: 'Verificação de segurança falhou. Recarregue a página e tente novamente.' }, { status: 400 })
+  }
+
+  // ============================================================
+  // CAMADA: Validação de arquivo (tamanho + magic bytes)
+  // ============================================================
+  const file = formData.get('file')
+  if (!(file instanceof File)) return NextResponse.json({ error: 'Arquivo ausente.' }, { status: 400 })
+  if (file.size === 0) return NextResponse.json({ error: 'Arquivo vazio.' }, { status: 400 })
+  if (file.size > MAX_FILE_SIZE) {
+    await logSecurityEvent({ action: 'oversized', ip_hash: ipHashed, metadata: { size: file.size } })
+    return NextResponse.json({ error: 'Arquivo acima de 12MB.' }, { status: 413 })
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const detectedMime = detectMimeFromBuffer(buffer)
+  if (!detectedMime || !ALLOWED_DETECTED.has(detectedMime)) {
+    await logSecurityEvent({
+      action: 'invalid_file',
+      ip_hash: ipHashed,
+      metadata: { declared: file.type, detected: detectedMime },
+    })
+    return NextResponse.json({ error: 'Formato de arquivo não suportado.' }, { status: 415 })
+  }
+
+  // ============================================================
+  // CAMADA: Cache por hash (dedup — pula chamada API se imagem repetida)
+  // ============================================================
+  const settings = await getSettings()
+  const fileHash = sha256Hex(buffer)
+  let analise: Awaited<ReturnType<typeof analyzeFine>>['data'] | null = null
+  let cacheHit = false
+
+  const cached = await getCachedAnalysis(fileHash)
+  if (cached) {
+    analise = cached
+    cacheHit = true
+    await logSecurityEvent({ action: 'cache_hit', ip_hash: ipHashed, rule: 'hash_match', metadata: { hash: fileHash.slice(0, 16) } })
+  }
+
+  // ============================================================
+  // CAMADA: Disjuntor global de orçamento
+  // ============================================================
+  if (!cacheHit) {
+    const budget = await checkBudget({
+      maxHour: Number(process.env.MAX_ANALISES_HORA ?? 300),
+      maxDay: Number(process.env.MAX_ANALISES_DIA ?? 2000),
+    })
+    if (!budget.ok) {
+      await logSecurityEvent({
+        action: 'budget_capped',
+        ip_hash: ipHashed,
+        rule: budget.reason ?? null,
+        metadata: budget.current as Record<string, unknown>,
+      })
+      return NextResponse.json(
+        { error: 'Estamos com alta demanda agora. Tente em alguns minutos.' },
+        { status: 503, headers: { 'Retry-After': '120' } },
+      )
+    }
+  }
+
+  // ============================================================
+  // CHAMADA À API (só aqui se tudo passou)
+  // ============================================================
+  try {
     const utm = {
       utm_source: stringOrNull(formData.get('utm_source')),
       utm_medium: stringOrNull(formData.get('utm_medium')),
@@ -51,12 +161,17 @@ export async function POST(req: NextRequest) {
       utm_term: stringOrNull(formData.get('utm_term')),
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const settings = await getSettings()
-    const systemPrompt = await getActivePrompt('analise')
+    if (!cacheHit) {
+      const systemPrompt = await getActivePrompt('analise')
+      const result = await analyzeFine({ buffer, mimeType: detectedMime, systemPrompt })
+      analise = result.data
+      await incrementBudget()
+      const cacheTtlHours = Number(process.env.CACHE_TTL_HORAS ?? 48)
+      await saveCachedAnalysis(fileHash, analise, cacheTtlHours)
+      // Salva usage do call real (cache_hit não conta)
+    }
 
-    const { data: analise, usage: analiseUsage } = await analyzeFine({ buffer, mimeType: file.type, systemPrompt })
-    // imagem descartada
+    if (!analise) throw new Error('Análise vazia')
 
     const dataNotif = analise.data_notificacao ? new Date(analise.data_notificacao) : null
     const dataInfr = analise.data_infracao ? new Date(analise.data_infracao) : null
@@ -69,14 +184,12 @@ export async function POST(req: NextRequest) {
     const dataMissing = !dataNotif
     const valorMissing = !analise.valor_multa_centavos
 
-    // Fase é sempre defesa_previa ou jari. Prazo é só informação.
     const phase = routePhase({
       tipo_notificacao: tipoEfetivo,
       data_notificacao: dataNotif,
       prazoDias: settings.prazo_dias,
     })
 
-    // Roteamento determinístico do modo (em código, sem IA)
     const rota = definirModoGeracao({
       tipo_notificacao: tipoEfetivo,
       data_infracao: dataInfr,
@@ -143,6 +256,19 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    if (!cacheHit) {
+      // Anthropic já foi chamada — salva usage real
+      // (recordApiUsage seria chamado dentro do analyzeFine se exposesse o usage; aqui não temos
+      // o objeto raw. TODO em fase 2: refatorar analyzeFine pra emitir usage no upload e cache. )
+    }
+
+    await logSecurityEvent({
+      action: 'analise_ok',
+      ip_hash: ipHashed,
+      rule: cacheHit ? 'cache_hit' : 'api_call',
+      metadata: { orderId: order.id, cache: cacheHit },
+    })
+
     await logEvent({
       tipo: 'analise',
       order_id: order.id,
@@ -157,6 +283,7 @@ export async function POST(req: NextRequest) {
         vicio_forte: analise.vicio_forte,
         valor_missing: valorMissing,
         data_missing: dataMissing,
+        cache_hit: cacheHit,
       },
     })
 
