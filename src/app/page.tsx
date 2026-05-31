@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { FunnelTracker, ConsentBanner, track } from '@/components/Funnel'
 import { useRouter } from 'next/navigation'
 
 type UploadResult = {
@@ -15,6 +16,10 @@ type UploadResult = {
 // Página
 // ============================================================
 export default function HomePage() {
+  useEffect(() => {
+    track({ step: 'page_view' })
+  }, [])
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const utm: Record<string, string> = {}
@@ -47,6 +52,7 @@ export default function HomePage() {
         <FinalCta />
         <Footer />
       </main>
+    <ConsentBanner />
     </>
   )
 }

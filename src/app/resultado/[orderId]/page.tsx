@@ -58,7 +58,7 @@ export default async function ResultadoPage({ params }: PageProps) {
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
-      <TrackResultView orderId={order.id} />
+      <TrackResultView orderId={order.id} resultado={order.modo_geracao ?? (fineData?.is_multa === false ? 'nao_multa' : null)} />
       <div className="mx-auto max-w-2xl">
         <Link href="/" className="mb-4 inline-block text-sm text-slate-500 hover:text-slate-700">
           ← Voltar

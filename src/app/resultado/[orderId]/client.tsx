@@ -1,20 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { track } from '@/components/Funnel'
 import { useRouter } from 'next/navigation'
 
 // ============================================================
 // Tracking on-mount (viu_resultado)
 // ============================================================
-export function TrackResultView({ orderId }: { orderId: string }) {
+export function TrackResultView({ orderId, resultado }: { orderId: string; resultado?: string | null }) {
   useEffect(() => {
+    track({ step: 'analysis_completed', order_id: orderId, resultado: resultado ?? null })
     fetch('/api/events', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ tipo: 'viu_resultado', order_id: orderId }),
       keepalive: true,
     }).catch(() => {})
-  }, [orderId])
+  }, [orderId, resultado])
   return null
 }
 
