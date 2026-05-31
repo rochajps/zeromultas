@@ -1,36 +1,39 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
-import { revalidatePath } from 'next/cache'
+import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
 import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { generateRecursoForOrder } from '@/lib/recurso'
 import { logEvent } from '@/lib/events'
 import { randomBytes } from 'crypto'
+import { SubmitButton, FlashMessage } from './_components'
 
 export const dynamic = 'force-dynamic'
 
 async function marcarPagoManual(formData: FormData) {
   'use server'
   const orderId = String(formData.get('orderId'))
-  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { recurso: true } })
-  if (!order) return
+  try {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { recurso: true } })
+    if (!order) throw new Error('Pedido não encontrado.')
 
-  const downloadToken = order.download_token ?? randomBytes(24).toString('hex')
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status: 'pago',
-      paid_at: new Date(),
-      download_token: downloadToken,
-    },
-  })
-  await logEvent({ tipo: 'pago', order_id: orderId, metadata: { source: 'admin_manual' } })
+    const downloadToken = order.download_token ?? randomBytes(24).toString('hex')
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'pago', paid_at: new Date(), download_token: downloadToken },
+    })
+    await logEvent({ tipo: 'pago', order_id: orderId, metadata: { source: 'admin_manual' } })
 
-  if (!order.recurso) {
-    generateRecursoForOrder(orderId).catch((e) => console.error('[admin:gen]', e))
+    if (!order.recurso) {
+      generateRecursoForOrder(orderId).catch((e) => console.error('[admin:gen]', e))
+      redirect(`/admin/pedidos/${orderId}?ok=Pago+marcado.+Recurso+sendo+gerado+em+background.`)
+    }
+    redirect(`/admin/pedidos/${orderId}?ok=Pedido+marcado+como+pago.`)
+  } catch (e) {
+    if (e && typeof e === 'object' && 'digest' in e) throw e // re-throw redirect
+    const msg = e instanceof Error ? e.message : 'Erro desconhecido'
+    redirect(`/admin/pedidos/${orderId}?err=${encodeURIComponent(msg)}`)
   }
-  revalidatePath(`/admin/pedidos/${orderId}`)
 }
 
 async function gerarRecursoManual(formData: FormData) {
@@ -38,13 +41,21 @@ async function gerarRecursoManual(formData: FormData) {
   const orderId = String(formData.get('orderId'))
   try {
     await generateRecursoForOrder(orderId)
+    redirect(`/admin/pedidos/${orderId}?ok=Recurso+gerado+com+sucesso.`)
   } catch (e) {
-    console.error('[admin:gen-manual]', e)
+    if (e && typeof e === 'object' && 'digest' in e) throw e
+    const msg = e instanceof Error ? e.message : 'Erro desconhecido'
+    redirect(`/admin/pedidos/${orderId}?err=${encodeURIComponent('Falha ao gerar: ' + msg)}`)
   }
-  revalidatePath(`/admin/pedidos/${orderId}`)
 }
 
-export default async function PedidoDetailPage({ params }: { params: { id: string } }) {
+export default async function PedidoDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string }
+  searchParams: { ok?: string; err?: string }
+}) {
   const order = await prisma.order.findUnique({
     where: { id: params.id },
     include: { fine_data: true, driver_data: true, driver_input: true, recurso: true, price_tier: true },
@@ -65,35 +76,37 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
         </p>
       </div>
 
-      {/* Ações manuais admin */}
+      {searchParams.ok && <FlashMessage type="success" text={searchParams.ok} />}
+      {searchParams.err && <FlashMessage type="error" text={searchParams.err} />}
+
       <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-5">
         <h2 className="font-semibold text-amber-900">⚙️ Ações manuais (backup)</h2>
         <p className="mt-1 text-xs text-amber-700">
-          Use só quando o pagamento não foi reconhecido automaticamente ou pra forçar geração de recurso.
+          Use quando o pagamento não foi reconhecido automaticamente ou pra forçar geração do recurso.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           {!isPago && (
             <form action={marcarPagoManual}>
               <input type="hidden" name="orderId" value={order.id} />
-              <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                💰 Marcar como pago (manual)
-              </button>
+              <SubmitButton variant="success" pendingChildren="Marcando como pago…">
+                💰 Marcar como pago
+              </SubmitButton>
             </form>
           )}
           {isPago && (
             <form action={gerarRecursoManual}>
               <input type="hidden" name="orderId" value={order.id} />
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+              <SubmitButton variant="primary" pendingChildren="Gerando recurso…">
                 {temRecurso ? '🔄 Regenerar recurso' : '📝 Gerar recurso agora'}
-              </button>
+              </SubmitButton>
             </form>
           )}
           {!isPago && (
             <form action={gerarRecursoManual}>
               <input type="hidden" name="orderId" value={order.id} />
-              <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <SubmitButton variant="ghost" pendingChildren="Gerando recurso…">
                 📝 Gerar recurso (sem cobrar)
-              </button>
+              </SubmitButton>
             </form>
           )}
         </div>
