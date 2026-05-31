@@ -186,37 +186,7 @@ async function salvarRegras(formData: FormData) {
   redirect('/admin/regras?saved=1')
 }
 
-async function restaurarPadrao(formData: FormData) {
-  'use server'
-  const key = String(formData.get('key') ?? '') as keyof SettingsValues
-  if (!(key in DEFAULT_SETTINGS)) return
-  const def = ROW_DEFS.find((d) => d.key === key)
-  if (!def) return
-  const defaultValue = DEFAULT_SETTINGS[key]
-  if (def.type === 'number') {
-    await prisma.setting.upsert({
-      where: { key },
-      update: { type: 'number', value_number: defaultValue as number, value_text: null, value_bool: null, description: def.description, group: def.group },
-      create: { key, type: 'number', value_number: defaultValue as number, description: def.description, group: def.group },
-    })
-  } else if (def.type === 'boolean') {
-    await prisma.setting.upsert({
-      where: { key },
-      update: { type: 'boolean', value_bool: defaultValue as boolean, value_number: null, value_text: null, description: def.description, group: def.group },
-      create: { key, type: 'boolean', value_bool: defaultValue as boolean, description: def.description, group: def.group },
-    })
-  } else {
-    await prisma.setting.upsert({
-      where: { key },
-      update: { type: 'text', value_text: defaultValue as string, value_number: null, value_bool: null, description: def.description, group: def.group },
-      create: { key, type: 'text', value_text: defaultValue as string, description: def.description, group: def.group },
-    })
-  }
-  invalidateSettingsCache()
-  redirect('/admin/regras?restored=' + encodeURIComponent(String(key)))
-}
-
-export default async function RegrasPage({ searchParams }: { searchParams: { saved?: string; restored?: string } }) {
+export default async function RegrasPage({ searchParams }: { searchParams: { saved?: string } }) {
   const rows = await prisma.setting.findMany()
   const current: Record<string, string | number | boolean> = {}
   for (const def of ROW_DEFS) {
@@ -247,11 +217,6 @@ export default async function RegrasPage({ searchParams }: { searchParams: { sav
         </div>
       )}
 
-      {searchParams.restored && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          ✓ Valor padrão restaurado para <code>{searchParams.restored}</code>.
-        </div>
-      )}
 
       <form action={salvarRegras} className="space-y-6">
         {groups.map((g) => (
@@ -326,20 +291,6 @@ export default async function RegrasPage({ searchParams }: { searchParams: { sav
         </button>
       </form>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Restaurar valor padrão por chave</h2>
-        <p className="mt-1 text-xs text-slate-500">Útil se mudou algo e quer voltar ao default.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {ROW_DEFS.map((d) => (
-            <form key={d.key} action={restaurarPadrao}>
-              <input type="hidden" name="key" value={d.key} />
-              <button className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">
-                {d.label} → default
-              </button>
-            </form>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }

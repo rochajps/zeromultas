@@ -65,7 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   let preco_centavos: number | null = order.preco_centavos
   let faixa_id: number | null = order.faixa_id
-  if (valorCentavos && phase.fase !== 'vencido') {
+  if (valorCentavos) {
     const tiers = await prisma.priceTier.findMany({ where: { ativo: true } })
     const pricing = pickTier(valorCentavos, tiers)
     if (pricing) {
