@@ -266,20 +266,22 @@ function Uploader() {
               </p>
             </div>
 
-            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+            <div className="mt-6 space-y-2">
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand-blue px-5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-blue-dark active:scale-[0.98]"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-blue px-5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-blue-dark active:scale-[0.98]"
               >
-                <FileIcon className="h-5 w-5" /> Selecionar arquivo
+                <FileIcon className="h-5 w-5" />
+                <span>Selecionar arquivo</span>
               </button>
               <button
                 type="button"
                 onClick={() => cameraRef.current?.click()}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand-yellow px-5 text-sm font-bold text-brand-blue-dark shadow-sm transition hover:bg-brand-yellow-hover active:scale-[0.98] sm:hidden"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-yellow px-5 text-sm font-bold text-brand-blue-dark shadow-sm transition hover:bg-brand-yellow-hover active:scale-[0.98] sm:hidden"
               >
-                <CameraIcon className="h-5 w-5" /> Tirar foto
+                <CameraIcon className="h-5 w-5" />
+                <span>Tirar foto pela câmera</span>
               </button>
             </div>
 
