@@ -6,11 +6,12 @@ export const dynamic = 'force-dynamic'
 
 type RowDef = {
   key: keyof SettingsValues
-  type: 'number' | 'text' | 'boolean'
-  group: 'prazo' | 'score' | 'mensagens' | 'comportamento'
+  type: 'number' | 'text' | 'boolean' | 'select'
+  group: 'prazo' | 'score' | 'mensagens' | 'comportamento' | 'valor'
   label: string
   description: string
   rows?: number
+  options?: { value: string; label: string }[]
 }
 
 const ROW_DEFS: RowDef[] = [
@@ -21,6 +22,13 @@ const ROW_DEFS: RowDef[] = [
     group: 'prazo',
     label: 'Prazo legal (dias)',
     description: 'Quantos dias após a notificação ainda dá pra recorrer. Padrão CTB: 30.',
+  },
+  {
+    key: 'prazo_cetran_dias',
+    type: 'number',
+    group: 'prazo',
+    label: 'Prazo do CETRAN (dias)',
+    description: 'Quantos dias após a ciência da decisão da JARI ainda dá pra recorrer ao CETRAN.',
   },
   {
     key: 'cobrar_proximo_vencimento_dias',
@@ -35,14 +43,40 @@ const ROW_DEFS: RowDef[] = [
     type: 'boolean',
     group: 'comportamento',
     label: 'Permitir gerar recurso mesmo com prazo vencido',
-    description: 'Quando LIGADO, o checkout cobra mesmo se o prazo administrativo já passou. Útil pra testes ou quando o user assume o risco.',
+    description: 'Quando LIGADO, o checkout cobra mesmo se o prazo administrativo já passou. Útil pra testes.',
   },
   {
     key: 'permitir_cetran_direto',
     type: 'boolean',
     group: 'comportamento',
     label: 'Mostrar opção CETRAN nos vencidos',
-    description: 'Quando LIGADO, oferecer o recurso ao CETRAN como alternativa em pedidos com prazo vencido.',
+    description: 'Quando LIGADO, oferecer recurso ao CETRAN como alternativa em pedidos com prazo vencido.',
+  },
+  {
+    key: 'tipo_padrao_quando_desconhecido',
+    type: 'select',
+    group: 'comportamento',
+    label: 'Tipo de notificação assumido quando não dá pra identificar',
+    description: 'A IA pode falhar em identificar se a notificação é NA (autuação) ou NP (penalidade). Definimos um padrão.',
+    options: [
+      { value: 'NA', label: 'NA — Notificação de Autuação (defesa prévia)' },
+      { value: 'NP', label: 'NP — Notificação de Penalidade (recurso à JARI)' },
+    ],
+  },
+  // VALOR
+  {
+    key: 'valor_minimo_multa_centavos',
+    type: 'number',
+    group: 'valor',
+    label: 'Valor mínimo da multa pra aceitar (em centavos)',
+    description: 'Multas abaixo deste valor são rejeitadas no checkout. 0 = sem mínimo. Ex.: 13000 = R$ 130,00.',
+  },
+  {
+    key: 'valor_maximo_multa_centavos',
+    type: 'number',
+    group: 'valor',
+    label: 'Valor máximo da multa pra aceitar (em centavos)',
+    description: 'Multas acima deste valor são rejeitadas no checkout. 0 = sem máximo.',
   },
   // SCORE
   {
@@ -100,11 +134,20 @@ const ROW_DEFS: RowDef[] = [
     description: 'Texto exibido quando a imagem enviada não parece notificação de multa.',
     rows: 2,
   },
+  {
+    key: 'msg_valor_fora_faixa',
+    type: 'text',
+    group: 'mensagens',
+    label: 'Mensagem — valor fora da faixa',
+    description: 'Texto exibido quando a multa está abaixo do mínimo ou acima do máximo configurado.',
+    rows: 2,
+  },
 ]
 
 const GROUP_LABELS: Record<RowDef['group'], string> = {
   prazo: '⏱️ Prazo e tempestividade',
   comportamento: '🎯 Comportamento do funil',
+  valor: '💰 Valor da multa aceito',
   score: '📊 Score (viabilidade)',
   mensagens: '💬 Mensagens ao usuário',
 }
@@ -129,6 +172,7 @@ async function salvarRegras(formData: FormData) {
         create: { key: def.key, type: 'boolean', value_bool: checked, description: def.description, group: def.group },
       })
     } else {
+      // 'text' e 'select' viram texto
       const text = String(raw ?? '').trim()
       return prisma.setting.upsert({
         where: { key: def.key },
@@ -186,14 +230,14 @@ export default async function RegrasPage({ searchParams }: { searchParams: { sav
     }
   }
 
-  const groups: RowDef['group'][] = ['prazo', 'comportamento', 'score', 'mensagens']
+  const groups: RowDef['group'][] = ['prazo', 'comportamento', 'valor', 'score', 'mensagens']
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Regras de negócio</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Comportamento do funil sem precisar mexer no código. Cache TTL 60s.
+          Comportamento do funil sem mexer no código. Cache TTL 60s.
         </p>
       </div>
 
@@ -215,7 +259,7 @@ export default async function RegrasPage({ searchParams }: { searchParams: { sav
             <h2 className="font-semibold">{GROUP_LABELS[g]}</h2>
             <div className="mt-4 space-y-5">
               {ROW_DEFS.filter((d) => d.group === g).map((def) => (
-                <div key={def.key} className="grid gap-3 sm:grid-cols-[1fr,minmax(0,300px)] sm:items-start">
+                <div key={def.key} className="grid gap-3 sm:grid-cols-[1fr,minmax(0,320px)] sm:items-start">
                   <div>
                     <label htmlFor={def.key} className="text-sm font-medium text-slate-800">
                       {def.label}
@@ -245,6 +289,19 @@ export default async function RegrasPage({ searchParams }: { searchParams: { sav
                         />
                         <span className="text-sm font-medium">{current[def.key] ? 'Ligado' : 'Desligado'}</span>
                       </label>
+                    ) : def.type === 'select' ? (
+                      <select
+                        id={def.key}
+                        name={def.key}
+                        defaultValue={String(current[def.key])}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      >
+                        {def.options!.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
                     ) : (
                       <textarea
                         id={def.key}

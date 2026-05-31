@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     // Se IA não identificou tipo, assumimos NA. Se não tem data, marcamos data_missing
     // e DEIXAMOS o usuário completar na próxima tela (não vamos pra 'vencido' às cegas).
     const tipoOriginal = analise.tipo_notificacao
-    const tipoEfetivo = tipoOriginal === 'desconhecido' ? 'NA' : tipoOriginal
+    const tipoEfetivo = tipoOriginal === 'desconhecido' ? (settings.tipo_padrao_quando_desconhecido as 'NA' | 'NP') : tipoOriginal
     const dataMissing = !dataNotif
     const valorMissing = !analise.valor_multa_centavos
 

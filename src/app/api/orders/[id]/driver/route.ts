@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (endereco.length < 5) return NextResponse.json({ error: 'Endereço inválido.' }, { status: 400 })
     if (cepRaw.length !== 8) return NextResponse.json({ error: 'CEP inválido.' }, { status: 400 })
-    if (whatsapp && whatsapp.length < 10) return NextResponse.json({ error: 'WhatsApp inválido.' }, { status: 400 })
+    if (!whatsapp || whatsapp.length < 10) return NextResponse.json({ error: 'WhatsApp é obrigatório (mín. 10 dígitos com DDD).' }, { status: 400 })
     if (!consentimento) return NextResponse.json({ error: 'É necessário aceitar a política de privacidade.' }, { status: 400 })
 
     let nome: string | null = null

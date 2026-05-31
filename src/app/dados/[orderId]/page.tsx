@@ -125,9 +125,11 @@ export default function DadosPage({ params }: Props) {
   const cnhDigits = cnh.replace(/\D+/g, '')
   const cepDigits = cep.replace(/\D+/g, '')
 
+  const whatsappDigits = whatsapp.replace(/\D+/g, '')
   const podeEnviar =
     endereco.length >= 5 &&
     cepDigits.length === 8 &&
+    whatsappDigits.length >= 10 &&
     lgpd &&
     (modo === 'foto'
       ? !!file
@@ -243,9 +245,10 @@ export default function DadosPage({ params }: Props) {
               {buscandoCep && <p className="mt-1 text-xs text-slate-400">Buscando endereço…</p>}
             </div>
             <div>
-              <label className="text-sm font-medium">WhatsApp <span className="text-slate-400 font-normal">(opcional)</span></label>
+              <label className="text-sm font-medium">WhatsApp</label>
               <input
                 type="tel"
+                required
                 inputMode="numeric"
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(maskPhone(e.target.value))}

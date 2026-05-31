@@ -41,15 +41,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!isNaN(parsed.getTime())) dataNotif = parsed
   }
 
+  const settings = await getSettings()
   // tipo só importa quando antes estava 'desconhecido'; senão preserva
   let tipo = order.fine_data.tipo_notificacao
   if (!tipo || tipo === 'desconhecido') {
     if (tipoRaw === 'NA' || tipoRaw === 'NP') tipo = tipoRaw
-    else tipo = 'NA' // assumido
+    else tipo = settings.tipo_padrao_quando_desconhecido as 'NA' | 'NP'
   }
 
   // Recalcula
-  const settings = await getSettings()
   const phase = routePhase({
     tipo_notificacao: tipo,
     data_notificacao: dataNotif,

@@ -67,6 +67,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Pedido com prazo vencido — venda bloqueada nas regras.' }, { status: 409 })
     }
 
+    // Validar faixa de valor da multa
+    if (order.valor_multa_centavos != null) {
+      if (settings.valor_minimo_multa_centavos > 0 && order.valor_multa_centavos < settings.valor_minimo_multa_centavos) {
+        return NextResponse.json({ error: settings.msg_valor_fora_faixa }, { status: 409 })
+      }
+      if (settings.valor_maximo_multa_centavos > 0 && order.valor_multa_centavos > settings.valor_maximo_multa_centavos) {
+        return NextResponse.json({ error: settings.msg_valor_fora_faixa }, { status: 409 })
+      }
+    }
+
     if (!precoAtual || !faixaIdAtual) {
       return NextResponse.json({ error: 'Preço não definido. Reanalise a multa ou informe o valor.' }, { status: 400 })
     }

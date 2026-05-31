@@ -1,25 +1,42 @@
 import { prisma } from './prisma'
 
 export interface SettingsValues {
+  // Prazo
   prazo_dias: number
+  prazo_cetran_dias: number
+  cobrar_proximo_vencimento_dias: number
+  // Score
   score_alto: number
   score_moderado: number
   score_min_visivel: number
+  // Comportamento
+  permitir_vencido: boolean
+  permitir_cetran_direto: boolean
+  tipo_padrao_quando_desconhecido: string // 'NA' | 'NP'
+  // Valor
+  valor_minimo_multa_centavos: number
+  valor_maximo_multa_centavos: number
+  // Mensagens
   msg_score_alto: string
   msg_score_moderado: string
   msg_score_vencido: string
   msg_nao_eh_multa: string
-  cobrar_proximo_vencimento_dias: number
-  permitir_vencido: boolean
-  permitir_cetran_direto: boolean
   msg_vencido_alternativa: string
+  msg_valor_fora_faixa: string
 }
 
 export const DEFAULT_SETTINGS: SettingsValues = {
   prazo_dias: 30,
+  prazo_cetran_dias: 30,
+  cobrar_proximo_vencimento_dias: 0,
   score_alto: 85,
   score_moderado: 55,
   score_min_visivel: 0,
+  permitir_vencido: false,
+  permitir_cetran_direto: true,
+  tipo_padrao_quando_desconhecido: 'NA',
+  valor_minimo_multa_centavos: 0,
+  valor_maximo_multa_centavos: 0,
   msg_score_alto:
     'Identificamos vício formal/processual claro. Chance significativa de anulação com fundamentação correta.',
   msg_score_moderado:
@@ -27,14 +44,12 @@ export const DEFAULT_SETTINGS: SettingsValues = {
   msg_score_vencido:
     'O prazo administrativo já encerrou. Não cobramos por recurso intempestivo — não há viabilidade nesta fase.',
   msg_nao_eh_multa: 'Não conseguimos identificar uma multa válida nesta imagem.',
-  cobrar_proximo_vencimento_dias: 0,
-  permitir_vencido: false,
-  permitir_cetran_direto: true,
   msg_vencido_alternativa:
     'Se você já recebeu a decisão negativa da JARI, ainda tem 30 dias contados da ciência pra recorrer ao CETRAN (3ª instância). A gente gera essa peça também.',
+  msg_valor_fora_faixa:
+    'O valor da multa está fora da faixa que atendemos no momento. Recomendamos pagar diretamente o auto.',
 }
 
-// Cache em memória (single PM2 fork) — TTL curto pra refletir mudanças no admin sem reload manual.
 let _cache: { values: SettingsValues; loadedAt: number } | null = null
 const CACHE_TTL_MS = 60_000
 

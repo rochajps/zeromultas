@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   // Define prazo do CETRAN a partir de "hoje" + prazo_dias (assumindo decisão recente)
   const prazoLimite = new Date()
-  prazoLimite.setDate(prazoLimite.getDate() + settings.prazo_dias)
+  prazoLimite.setDate(prazoLimite.getDate() + settings.prazo_cetran_dias)
 
   await prisma.order.update({
     where: { id: orderId },
