@@ -117,6 +117,8 @@ model DriverData {
   cpf        String
   num_cnh    String
   endereco   String
+  cep        String?
+  whatsapp   String?
   created_at DateTime @default(now())
 
   order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)

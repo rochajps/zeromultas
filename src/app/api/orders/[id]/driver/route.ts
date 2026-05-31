@@ -1,7 +1,3 @@
-// Coleta dados do condutor. Aceita dois modos:
-// (A) upload da foto da CNH (IA extrai e descarta)
-// (B) digitação manual de nome/CPF/CNH (fallback quando foto falha ou usuário não quer)
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getActivePrompt } from '@/lib/prompts'
@@ -22,19 +18,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const order = await prisma.order.findUnique({ where: { id: orderId } })
     if (!order) return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 })
-    if (order.status === 'vencido' || order.fase === 'vencido') {
-      return NextResponse.json({ error: 'Pedido com prazo vencido.' }, { status: 409 })
-    }
+    // Não bloqueamos aqui por fase vencida — a decisão fica pro /checkout (que recalcula com regras atuais).
 
     const formData = await req.formData()
     const file = formData.get('cnh_file')
     const modoManual = formData.get('modo') === 'manual'
     const endereco = (formData.get('endereco') ?? '').toString().trim()
+    const cepRaw = (formData.get('cep') ?? '').toString().replace(/\D+/g, '')
+    const whatsapp = (formData.get('whatsapp') ?? '').toString().replace(/\D+/g, '') || null
     const motivo = (formData.get('motivo_injustica') ?? '').toString().trim()
     const consentimento = formData.get('consentimento_lgpd') === 'true' || formData.get('consentimento_lgpd') === 'on'
 
     if (endereco.length < 5) return NextResponse.json({ error: 'Endereço inválido.' }, { status: 400 })
-    if (motivo.length < 10) return NextResponse.json({ error: 'Descreva por que a multa é injusta (mín. 10 caracteres).' }, { status: 400 })
+    if (cepRaw.length !== 8) return NextResponse.json({ error: 'CEP inválido.' }, { status: 400 })
+    if (whatsapp && whatsapp.length < 10) return NextResponse.json({ error: 'WhatsApp inválido.' }, { status: 400 })
     if (!consentimento) return NextResponse.json({ error: 'É necessário aceitar a política de privacidade.' }, { status: 400 })
 
     let nome: string | null = null
@@ -54,7 +51,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
       num_cnh = num_cnh.replace(/\D+/g, '')
     } else {
-      // Modo foto
       if (!(file instanceof File)) return NextResponse.json({ error: 'CNH ausente.' }, { status: 400 })
       if (file.size === 0) return NextResponse.json({ error: 'CNH vazia.' }, { status: 400 })
       if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: 'Imagem da CNH acima de 8MB.' }, { status: 413 })
@@ -63,10 +59,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const buffer = Buffer.from(await file.arrayBuffer())
       const systemPrompt = await getActivePrompt('extracao_cnh')
       const { data: cnh } = await extractCNH({ buffer, mimeType: file.type, systemPrompt })
-      // imagem descartada
 
       if (!cnh.nome || !cnh.cpf || !cnh.num_cnh) {
-        // Devolve com flag pra UI mostrar campos manuais
         return NextResponse.json(
           { error: 'Não conseguimos ler todos os campos da CNH.', requires_manual: true, parcial: cnh },
           { status: 422 },
@@ -80,8 +74,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await prisma.$transaction([
       prisma.driverData.upsert({
         where: { order_id: orderId },
-        update: { nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco },
-        create: { order_id: orderId, nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco },
+        update: { nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco, cep: cepRaw, whatsapp },
+        create: { order_id: orderId, nome: nome!, cpf: cpf!, num_cnh: num_cnh!, endereco, cep: cepRaw, whatsapp },
       }),
       prisma.driverInput.upsert({
         where: { order_id: orderId },

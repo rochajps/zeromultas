@@ -7,6 +7,28 @@ interface Props {
   params: { orderId: string }
 }
 
+// ============ máscaras ============
+function maskCpf(v: string): string {
+  const d = v.replace(/\D+/g, '').slice(0, 11)
+  return d
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d{1,2})/, '$1.$2.$3-$4')
+}
+function maskCEP(v: string): string {
+  const d = v.replace(/\D+/g, '').slice(0, 8)
+  return d.replace(/^(\d{5})(\d)/, '$1-$2')
+}
+function maskPhone(v: string): string {
+  const d = v.replace(/\D+/g, '').slice(0, 11)
+  if (d.length <= 10)
+    return d.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2')
+  return d.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2')
+}
+function maskCnh(v: string): string {
+  return v.replace(/\D+/g, '').slice(0, 11)
+}
+
 export default function DadosPage({ params }: Props) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -15,13 +37,15 @@ export default function DadosPage({ params }: Props) {
   const [nome, setNome] = useState('')
   const [cpf, setCpf] = useState('')
   const [cnh, setCnh] = useState('')
+  const [whatsapp, setWhatsapp] = useState('')
+  const [cep, setCep] = useState('')
   const [endereco, setEndereco] = useState('')
   const [motivo, setMotivo] = useState('')
   const [lgpd, setLgpd] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [buscandoCep, setBuscandoCep] = useState(false)
 
-  // log abandono se sair sem submeter
   useEffect(() => {
     const onBeforeUnload = () => {
       if (!loading) {
@@ -35,6 +59,23 @@ export default function DadosPage({ params }: Props) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [params.orderId, loading])
 
+  // ViaCEP autocomplete
+  async function buscarCep(cepValor: string) {
+    const digits = cepValor.replace(/\D+/g, '')
+    if (digits.length !== 8) return
+    setBuscandoCep(true)
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const data = await r.json()
+      if (data && !data.erro) {
+        const partes = [data.logradouro, data.bairro, `${data.localidade}-${data.uf}`].filter(Boolean)
+        if (!endereco) setEndereco(partes.join(', '))
+      }
+    } catch {} finally {
+      setBuscandoCep(false)
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -43,7 +84,9 @@ export default function DadosPage({ params }: Props) {
       const fd = new FormData()
       fd.append('modo', modo)
       fd.append('endereco', endereco)
-      fd.append('motivo_injustica', motivo)
+      fd.append('cep', cep.replace(/\D+/g, ''))
+      if (whatsapp) fd.append('whatsapp', whatsapp.replace(/\D+/g, ''))
+      if (motivo) fd.append('motivo_injustica', motivo)
       fd.append('consentimento_lgpd', lgpd ? 'true' : 'false')
 
       if (modo === 'foto') {
@@ -78,11 +121,17 @@ export default function DadosPage({ params }: Props) {
     }
   }
 
+  const cpfDigits = cpf.replace(/\D+/g, '')
+  const cnhDigits = cnh.replace(/\D+/g, '')
+  const cepDigits = cep.replace(/\D+/g, '')
+
   const podeEnviar =
     endereco.length >= 5 &&
-    motivo.length >= 10 &&
+    cepDigits.length === 8 &&
     lgpd &&
-    (modo === 'foto' ? !!file : nome.length >= 5 && cpf.replace(/\D+/g, '').length === 11 && cnh.replace(/\D+/g, '').length >= 9)
+    (modo === 'foto'
+      ? !!file
+      : nome.length >= 5 && cpfDigits.length === 11 && cnhDigits.length >= 9)
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -94,7 +143,7 @@ export default function DadosPage({ params }: Props) {
         <p className="mt-1 text-sm text-slate-600">Precisamos do mínimo legal pra montar a peça em seu nome.</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          {/* Toggle entre foto e manual */}
+          {/* Toggle foto/manual */}
           <div className="flex gap-2 rounded-lg bg-slate-100 p-1 text-sm">
             <button
               type="button"
@@ -131,7 +180,7 @@ export default function DadosPage({ params }: Props) {
                 {file ? `📎 ${file.name}` : '📷 Selecionar / tirar foto da CNH'}
               </button>
               <p className="mt-1 text-xs text-slate-400">
-                🔒 Extraímos nome, CPF e nº da CNH e <strong>descartamos a imagem</strong> em seguida.
+                🔒 Extraímos nome, CPF e nº da CNH e <strong>descartamos a imagem</strong>.
               </p>
             </div>
           ) : (
@@ -155,10 +204,10 @@ export default function DadosPage({ params }: Props) {
                     required
                     inputMode="numeric"
                     value={cpf}
-                    onChange={(e) => setCpf(e.target.value)}
+                    onChange={(e) => setCpf(maskCpf(e.target.value))}
                     placeholder="000.000.000-00"
                     maxLength={14}
-                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
                   />
                 </div>
                 <div>
@@ -168,38 +217,67 @@ export default function DadosPage({ params }: Props) {
                     required
                     inputMode="numeric"
                     value={cnh}
-                    onChange={(e) => setCnh(e.target.value)}
+                    onChange={(e) => setCnh(maskCnh(e.target.value))}
                     placeholder="00000000000"
-                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
                   />
                 </div>
               </div>
             </div>
           )}
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-sm font-medium">CEP</label>
+              <input
+                type="text"
+                required
+                inputMode="numeric"
+                value={cep}
+                onChange={(e) => setCep(maskCEP(e.target.value))}
+                onBlur={(e) => buscarCep(e.target.value)}
+                placeholder="00000-000"
+                maxLength={9}
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+              />
+              {buscandoCep && <p className="mt-1 text-xs text-slate-400">Buscando endereço…</p>}
+            </div>
+            <div>
+              <label className="text-sm font-medium">WhatsApp <span className="text-slate-400 font-normal">(opcional)</span></label>
+              <input
+                type="tel"
+                inputMode="numeric"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(maskPhone(e.target.value))}
+                placeholder="(11) 99999-9999"
+                maxLength={15}
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+              />
+            </div>
+          </div>
+
           <div>
-            <label className="text-sm font-medium">Endereço completo</label>
+            <label className="text-sm font-medium">Endereço (Rua, número, bairro, cidade-UF)</label>
             <input
               type="text"
               required
               value={endereco}
               onChange={(e) => setEndereco(e.target.value)}
-              placeholder="Rua, número, bairro, cidade-UF"
+              placeholder="Rua das Flores, 123, Centro, São Paulo-SP"
               className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
+            <p className="mt-1 text-xs text-slate-400">Preencheremos automaticamente após digitar o CEP — confira o número e complemento.</p>
           </div>
 
           <div>
-            <label className="text-sm font-medium">Por que você considera a multa injusta?</label>
+            <label className="text-sm font-medium">Por que você considera a multa injusta? <span className="text-slate-400 font-normal">(opcional, mas ajuda a peça)</span></label>
             <textarea
-              required
-              rows={5}
+              rows={4}
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               placeholder="Descreva o que aconteceu. Quanto mais específico, melhor."
               className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-slate-400">Mín. 10 caracteres.</p>
           </div>
 
           <label className="flex items-start gap-3 rounded-lg bg-slate-50 p-3">
