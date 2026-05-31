@@ -316,3 +316,23 @@ model ConversionOutbox {
   @@index([status, created_at])
   @@index([order_id])
 }
+
+model IntegrationConfig {
+  key        String   @id
+  value      String
+  is_secret  Boolean  @default(false)
+  updated_at DateTime @updatedAt
+}
+
+model EventMapping {
+  id          Int      @id @default(autoincrement())
+  step        String
+  platform    String
+  event_name  String
+  enabled     Boolean  @default(true)
+  value_cents Int?
+  currency    String   @default("BRL")
+  updated_at  DateTime @updatedAt
+
+  @@unique([step, platform])
+}

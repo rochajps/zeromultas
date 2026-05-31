@@ -1,24 +1,18 @@
 // Conversion outbox + senders pra Meta CAPI, GA4 Measurement Protocol, Google Ads.
-// Estrutura completa. As funções send* falham com mensagem clara quando credenciais ausentes.
-// Quando você plugar as chaves no .env, status='pendente' do outbox passa a 'enviado'.
+// Chaves vêm do banco via getIntegrationKeys() — admin pode editar em /admin/integracoes.
 
 import { createHash } from 'crypto'
 import { prisma } from './prisma'
+import { getIntegrationKeys, lookupMapping, type Step as MappableStep } from './integrations'
 
-export type Platform = 'meta' | 'google_ads' | 'ga4'
+export type Platform = 'meta' | 'ga4' | 'google_ads'
 export type ConversionEvent = 'page_view' | 'lead' | 'initiate_checkout' | 'purchase'
 
-// ============================================================
-// Hash de PII (SHA-256 lowercase trim) — exigido por Meta/Google
-// ============================================================
 export function hashPii(v: string | null | undefined): string | null {
   if (!v) return null
   return createHash('sha256').update(v.trim().toLowerCase()).digest('hex')
 }
 
-// ============================================================
-// Outbox
-// ============================================================
 export async function enqueueConversion(args: {
   order_id: string
   platform: Platform
@@ -36,11 +30,8 @@ export async function enqueueConversion(args: {
       payload: args.payload as never,
       status: 'pendente',
     },
-    update: {
-      // Não sobrescreve se já enviado
-    },
+    update: {},
   })
-  // Dispara em background (não bloqueia)
   if (row.status === 'pendente') {
     processOutboxRow(row.id).catch((err) => console.error('[outbox:bg]', err))
   }
@@ -59,7 +50,6 @@ export async function processOutboxRow(id: bigint) {
     })
     return
   }
-
   try {
     await sender(row.evento as ConversionEvent, row.payload as Record<string, unknown>)
     await prisma.conversionOutbox.update({
@@ -85,47 +75,35 @@ export async function retryAllErrored(limit = 20): Promise<{ retried: number }> 
   return { retried: rows.length }
 }
 
-// ============================================================
-// Senders (stubs prontos pra ativação)
-// ============================================================
 const SENDERS: Record<Platform, (evento: ConversionEvent, payload: Record<string, unknown>) => Promise<void>> = {
   meta: sendToMeta,
   ga4: sendToGA4,
   google_ads: sendToGoogleAds,
 }
 
-async function sendToMeta(evento: ConversionEvent, payload: Record<string, unknown>) {
-  const pixel = process.env.META_PIXEL_ID
-  const token = process.env.META_CAPI_ACCESS_TOKEN
-  if (!pixel || !token) throw new Error('META_PIXEL_ID/META_CAPI_ACCESS_TOKEN ausentes — credenciais não configuradas')
+const EVENT_TO_STEP: Record<ConversionEvent, MappableStep> = {
+  page_view: 'page_view',
+  lead: 'analysis_completed',
+  initiate_checkout: 'pix_generated',
+  purchase: 'purchase',
+}
 
-  const eventNameMap: Record<ConversionEvent, string> = {
-    page_view: 'PageView',
-    lead: 'Lead',
-    initiate_checkout: 'InitiateCheckout',
-    purchase: 'Purchase',
-  }
+async function sendToMeta(evento: ConversionEvent, payload: Record<string, unknown>) {
+  const k = await getIntegrationKeys()
+  if (!k.meta_enabled) throw new Error('Meta desligada nas configurações')
+  if (!k.meta_pixel_id || !k.meta_capi_token) throw new Error('Meta sem credenciais')
+
+  const mapping = await lookupMapping(EVENT_TO_STEP[evento], 'meta')
+  if (!mapping?.enabled) throw new Error('Evento Meta desligado no mapeamento')
+  const eventName = mapping.event_name
 
   const body: Record<string, unknown> = {
-    data: [
-      {
-        event_name: eventNameMap[evento],
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: 'website',
-        ...payload,
-      },
-    ],
+    data: [{ event_name: eventName, event_time: Math.floor(Date.now() / 1000), action_source: 'website', ...payload }],
   }
-  if (process.env.META_TEST_EVENT_CODE) {
-    body.test_event_code = process.env.META_TEST_EVENT_CODE
-  }
+  if (k.meta_test_event_code) body.test_event_code = k.meta_test_event_code
 
-  const url = `https://graph.facebook.com/v19.0/${pixel}/events?access_token=${token}`
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  const url = `https://graph.facebook.com/v19.0/${k.meta_pixel_id}/events?access_token=${encodeURIComponent(k.meta_capi_token)}`
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   if (!r.ok) {
     const txt = await r.text().catch(() => '')
     throw new Error(`Meta ${r.status}: ${txt.slice(0, 300)}`)
@@ -133,16 +111,22 @@ async function sendToMeta(evento: ConversionEvent, payload: Record<string, unkno
 }
 
 async function sendToGA4(evento: ConversionEvent, payload: Record<string, unknown>) {
-  const measurementId = process.env.GA4_MEASUREMENT_ID
-  const apiSecret = process.env.GA4_API_SECRET
-  if (!measurementId || !apiSecret) throw new Error('GA4_MEASUREMENT_ID/GA4_API_SECRET ausentes — credenciais não configuradas')
+  const k = await getIntegrationKeys()
+  if (!k.ga4_enabled) throw new Error('GA4 desligado nas configurações')
+  if (!k.ga4_measurement_id || !k.ga4_api_secret) throw new Error('GA4 sem credenciais')
 
-  const url = `https://www.google-analytics.com/mp/collect?measurement_id=${encodeURIComponent(measurementId)}&api_secret=${encodeURIComponent(apiSecret)}`
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  const mapping = await lookupMapping(EVENT_TO_STEP[evento], 'ga4')
+  if (!mapping?.enabled) throw new Error('Evento GA4 desligado no mapeamento')
+
+  // Renomeia o evento conforme mapping
+  if (Array.isArray((payload as { events?: unknown }).events)) {
+    type Ev = { name: string; params?: Record<string, unknown> }
+    const events = (payload as { events: Ev[] }).events
+    events.forEach((e) => (e.name = mapping.event_name))
+  }
+
+  const url = `https://www.google-analytics.com/mp/collect?measurement_id=${encodeURIComponent(k.ga4_measurement_id)}&api_secret=${encodeURIComponent(k.ga4_api_secret)}`
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
   if (!r.ok) {
     const txt = await r.text().catch(() => '')
     throw new Error(`GA4 ${r.status}: ${txt.slice(0, 300)}`)
@@ -150,24 +134,14 @@ async function sendToGA4(evento: ConversionEvent, payload: Record<string, unknow
 }
 
 async function sendToGoogleAds(evento: ConversionEvent, _payload: Record<string, unknown>) {
-  const dev = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
-  const cid = process.env.GOOGLE_ADS_CONVERSION_ID
-  const label = process.env.GOOGLE_ADS_CONVERSION_LABEL
-  if (!dev || !cid || !label) {
-    throw new Error('GOOGLE_ADS_* ausentes — credenciais não configuradas (preencher e implementar OAuth flow)')
+  const k = await getIntegrationKeys()
+  if (!k.google_ads_enabled) throw new Error('Google Ads desligado nas configurações')
+  if (!k.google_ads_developer_token || !k.google_ads_conversion_id || !k.google_ads_conversion_label) {
+    throw new Error('Google Ads sem credenciais completas')
   }
-  if (evento !== 'purchase') {
-    // Eventos sem valor real podem ir só pro GA4
-    throw new Error('Google Ads upload só pra purchase nesse setup')
-  }
-  // Implementação real: Google Ads API ClickConversion upload com gclid.
-  // Estrutura pronta, mas precisa OAuth completo. Marcar como TODO:
+  if (evento !== 'purchase') throw new Error('Google Ads aceita só purchase nesse setup')
   throw new Error('TODO: implementar OAuth2 + ClickConversion upload (Google Ads API v17)')
 }
-
-// ============================================================
-// Helpers de payload pra cada plataforma (use no webhook)
-// ============================================================
 
 export function buildMetaPurchasePayload(args: {
   value_brl: number
@@ -192,10 +166,7 @@ export function buildMetaPurchasePayload(args: {
       client_ip_address: args.ip ?? undefined,
       client_user_agent: args.user_agent ?? undefined,
     },
-    custom_data: {
-      currency: args.currency,
-      value: args.value_brl,
-    },
+    custom_data: { currency: args.currency, value: args.value_brl },
   }
 }
 
