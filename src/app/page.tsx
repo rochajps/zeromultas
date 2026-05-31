@@ -730,7 +730,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'E se minha multa já estiver vencida?',
-    a: 'O sistema verifica isso no diagnóstico gratuito. Se o prazo de defesa prévia E de recurso à JARI já tiverem vencido, avisamos você antes — e não cobramos. Não vendemos recurso intempestivo.',
+    a: 'O sistema gera o recurso de qualquer multa que você enviar. O prazo de protocolo é responsabilidade sua — apresentamos no diagnóstico a data limite estimada com base no CTB (30 dias da notificação).',
   },
 ]
 

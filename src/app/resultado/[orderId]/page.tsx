@@ -4,9 +4,9 @@ import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
 import { formatDateBR } from '@/lib/format'
 import { getSettings } from '@/lib/settings'
-import { routePhase, type Fase } from '@/lib/phase-router'
+import { routePhase } from '@/lib/phase-router'
 import { computeScore } from '@/lib/scoring'
-import { CompleteDataForm, CetranCta, ScoreBadge, TrackResultView } from './client'
+import { CompleteDataForm, ScoreBadge, TrackResultView } from './client'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,56 +24,37 @@ export default async function ResultadoPage({ params }: PageProps) {
   const fineData = order.fine_data
   const settings = await getSettings()
 
-  // Se o pedido ainda não foi pago, recalculamos a fase com as regras ATUAIS do admin.
-  // Pedidos com status >= pago mantêm o estado salvo no banco (não mexer no histórico).
-  const recalculavel = order.status === 'analisado' || order.status === 'vencido' || order.status === 'aguardando_pagamento'
-  let fase: Fase | null = order.fase
-  let prazoStatus: 'valido' | 'vencido' | null = order.prazo_status
+  // Recalcula sempre. Nunca bloqueia por prazo.
+  const recalculavel = order.status === 'analisado' || order.status === 'aguardando_pagamento' || order.status === 'vencido'
+  let fase: 'defesa_previa' | 'jari' | 'cetran' = 'defesa_previa'
   let prazoLimite: Date | null = order.prazo_limite
 
-  // CETRAN ativado manualmente: respeitar e não recalcular fase
-  const isCetranAtivo = order.fase === 'cetran'
-
-  if (recalculavel && !isCetranAtivo && fineData && !order.data_missing) {
-    const phase = routePhase({
-      tipo_notificacao: fineData.tipo_notificacao,
-      data_notificacao: fineData.data_notificacao,
-      prazoDias: settings.prazo_dias,
-    })
-    fase = phase.fase
-    prazoStatus = phase.prazo_status
-    prazoLimite = phase.prazo_limite
-
-    // Aplica bloqueio "venda próxima do vencimento" só pra orders ainda não pagas
-    if (
-      settings.cobrar_proximo_vencimento_dias > 0 &&
-      phase.dias_restantes != null &&
-      phase.dias_restantes < settings.cobrar_proximo_vencimento_dias
-    ) {
-      fase = 'vencido'
-      prazoStatus = 'vencido'
+  if (fineData) {
+    if (order.fase === 'cetran') {
+      // Mantém CETRAN se ativado manualmente
+      fase = 'cetran'
+    } else if (recalculavel && !order.data_missing) {
+      const phase = routePhase({
+        tipo_notificacao: fineData.tipo_notificacao,
+        data_notificacao: fineData.data_notificacao,
+        prazoDias: settings.prazo_dias,
+      })
+      fase = phase.fase
+      prazoLimite = phase.prazo_limite
+    } else {
+      fase = (order.fase === 'jari' ? 'jari' : 'defesa_previa')
     }
   }
-
-  // Se admin liberou pedidos vencidos, o score também ignora o status vencido
-  const prazoStatusParaScore: 'valido' | 'vencido' = settings.permitir_vencido
-    ? 'valido'
-    : (prazoStatus ?? 'valido')
 
   const score = fineData
     ? computeScore({
         vicio_forte: fineData.vicio_forte ?? false,
-        prazo_status: prazoStatusParaScore,
         is_multa: fineData.is_multa ?? false,
         config: settings,
       })
     : null
 
   const precisaCompletar = order.valor_missing || order.data_missing
-  // Regra do admin: permitir_vencido força fluxo normal mesmo se prazo passou
-  const vencido = fase === 'vencido' && !settings.permitir_vencido
-  // Se fase salva é 'cetran', mantém pra exibir como tal
-  if (isCetranAtivo) fase = 'cetran' 
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -85,23 +66,16 @@ export default async function ResultadoPage({ params }: PageProps) {
 
         {!fineData?.is_multa ? (
           <NaoEhMulta mensagem={settings.msg_nao_eh_multa} />
-        ) : precisaCompletar && !vencido ? (
+        ) : precisaCompletar ? (
           <CompleteDataForm
             orderId={order.id}
             valorMissing={order.valor_missing}
             dataMissing={order.data_missing}
           />
-        ) : vencido ? (
-          <>
-            <Vencido prazoLimite={prazoLimite} mensagem={settings.msg_score_vencido} />
-            {settings.permitir_cetran_direto && (
-              <CetranCta orderId={order.id} mensagem={settings.msg_vencido_alternativa} />
-            )}
-          </>
         ) : (
           <Diagnostico
             orderId={order.id}
-            fase={fase as 'defesa_previa' | 'jari' | 'cetran'}
+            fase={fase}
             score={score?.score ?? 0}
             vicioForte={fineData.vicio_forte ?? false}
             vicioRazao={fineData.vicio_razao}
@@ -127,20 +101,6 @@ function NaoEhMulta({ mensagem }: { mensagem: string }) {
       <Link href="/" className="mt-4 inline-block rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white">
         Enviar outra imagem
       </Link>
-    </div>
-  )
-}
-
-function Vencido({ prazoLimite, mensagem }: { prazoLimite: Date | null; mensagem: string }) {
-  return (
-    <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
-      <h1 className="text-xl font-bold text-red-900">Prazo administrativo encerrado</h1>
-      <p className="mt-2 whitespace-pre-line text-sm text-red-800">
-        {mensagem}
-        {prazoLimite && (
-          <span className="block mt-2 text-xs">Prazo limite: <strong>{formatDateBR(prazoLimite)}</strong></span>
-        )}
-      </p>
     </div>
   )
 }
@@ -171,7 +131,7 @@ function Diagnostico(props: {
         <h1 className="mt-1 text-2xl font-bold">{faseLabel}</h1>
         {props.prazoLimite && (
           <p className="mt-1 text-sm text-slate-600">
-            Prazo até <strong>{formatDateBR(props.prazoLimite)}</strong>
+            Protocolar até <strong>{formatDateBR(props.prazoLimite)}</strong>
           </p>
         )}
 

@@ -1,9 +1,3 @@
-// Permite o usuário completar dados que a IA não conseguiu ler:
-// - valor_multa (input manual)
-// - data_notificacao (input manual)
-// - tipo_notificacao (assumido NA quando ausente)
-// Recalcula fase + preço.
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { routePhase } from '@/lib/phase-router'
@@ -29,7 +23,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 })
   }
 
-  // Sanitiza valores
+  const settings = await getSettings()
+
   let valorCentavos: number | null = order.valor_multa_centavos
   if (order.valor_missing && typeof valorRaw === 'number' && valorRaw > 0) {
     valorCentavos = Math.round(valorRaw * 100)
@@ -41,15 +36,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!isNaN(parsed.getTime())) dataNotif = parsed
   }
 
-  const settings = await getSettings()
-  // tipo só importa quando antes estava 'desconhecido'; senão preserva
   let tipo = order.fine_data.tipo_notificacao
   if (!tipo || tipo === 'desconhecido') {
     if (tipoRaw === 'NA' || tipoRaw === 'NP') tipo = tipoRaw
     else tipo = settings.tipo_padrao_quando_desconhecido as 'NA' | 'NP'
   }
 
-  // Recalcula
   const phase = routePhase({
     tipo_notificacao: tipo,
     data_notificacao: dataNotif,
@@ -58,7 +50,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const score = computeScore({
     vicio_forte: order.fine_data.vicio_forte ?? false,
-    prazo_status: phase.prazo_status,
     is_multa: order.fine_data.is_multa ?? true,
     config: settings,
   })
@@ -86,7 +77,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         prazo_limite: phase.prazo_limite,
         prazo_status: phase.prazo_status,
         data_missing: !dataNotif,
-        status: phase.fase === 'vencido' ? 'vencido' : 'analisado',
+        status: 'analisado',
       },
     }),
     prisma.fineData.update({

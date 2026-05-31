@@ -4,7 +4,6 @@ import { prisma } from '@/lib/prisma'
 import { createPixCharge } from '@/lib/tribopay'
 import { logEvent } from '@/lib/events'
 import { getSettings } from '@/lib/settings'
-import { routePhase } from '@/lib/phase-router'
 import { pickTier } from '@/lib/pricing'
 
 export const runtime = 'nodejs'
@@ -31,28 +30,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const settings = await getSettings()
-    let faseAtual = order.fase
+
+    // Recalcular preço com tiers atuais
     let precoAtual = order.preco_centavos
     let faixaIdAtual = order.faixa_id
-
-    // CETRAN: respeitar ativação manual. Não recalcular.
-    const isCetran = order.fase === 'cetran'
-
-    // Recalcular fase só pra defesa_previa/jari/vencido
-    if (!isCetran && order.fine_data && !order.data_missing) {
-      const phase = routePhase({
-        tipo_notificacao: order.fine_data.tipo_notificacao,
-        data_notificacao: order.fine_data.data_notificacao,
-        prazoDias: settings.prazo_dias,
-      })
-      faseAtual = phase.fase
-      const bloqueio =
-        settings.cobrar_proximo_vencimento_dias > 0 &&
-        phase.dias_restantes != null &&
-        phase.dias_restantes < settings.cobrar_proximo_vencimento_dias
-      if (bloqueio) faseAtual = 'vencido'
-    }
-
     if (order.valor_multa_centavos) {
       const tiers = await prisma.priceTier.findMany({ where: { ativo: true } })
       const pricing = pickTier(order.valor_multa_centavos, tiers)
@@ -62,12 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    // Aplicar regra do admin: permitir_vencido
-    if (faseAtual === 'vencido' && !settings.permitir_vencido) {
-      return NextResponse.json({ error: 'Pedido com prazo vencido — venda bloqueada nas regras.' }, { status: 409 })
-    }
-
-    // Validar faixa de valor da multa
+    // Validar faixa de valor da multa configurada no admin
     if (order.valor_multa_centavos != null) {
       if (settings.valor_minimo_multa_centavos > 0 && order.valor_multa_centavos < settings.valor_minimo_multa_centavos) {
         return NextResponse.json({ error: settings.msg_valor_fora_faixa }, { status: 409 })
@@ -81,10 +57,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Preço não definido. Reanalise a multa ou informe o valor.' }, { status: 400 })
     }
 
-    if (faseAtual !== order.fase || precoAtual !== order.preco_centavos || faixaIdAtual !== order.faixa_id) {
+    if (precoAtual !== order.preco_centavos || faixaIdAtual !== order.faixa_id) {
       await prisma.order.update({
         where: { id: orderId },
-        data: { fase: faseAtual, preco_centavos: precoAtual, faixa_id: faixaIdAtual },
+        data: { preco_centavos: precoAtual, faixa_id: faixaIdAtual },
       })
     }
 
@@ -117,7 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     })
 
-    await logEvent({ tipo: 'checkout', order_id: orderId, user_agent: ua, ip, metadata: { hash: charge.hash, fase: faseAtual } })
+    await logEvent({ tipo: 'checkout', order_id: orderId, user_agent: ua, ip, metadata: { hash: charge.hash } })
 
     return NextResponse.json({
       orderId,

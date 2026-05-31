@@ -1,25 +1,25 @@
-// Lógica pura de roteamento da fase do recurso administrativo de trânsito.
-// Não usa IA — determinístico, a partir do tipo da notificação e da data.
+// Lógica pura de roteamento da fase do recurso administrativo.
+// IMPORTANTE: nunca retorna fase='vencido'. Quando o prazo passou,
+// ainda retorna fase válida (defesa_previa ou jari) e marca prazo_status
+// apenas como INFORMAÇÃO — nunca como bloqueio.
 
-export const PRAZO_DIAS_DEFAULT = 30 // art. 281-A do CTB (defesa prévia) e art. 285 (JARI)
+export const PRAZO_DIAS_DEFAULT = 30
 
-export type TipoNotificacao = 'NA' | 'NP' | 'desconhecido'
-export type Fase = 'defesa_previa' | 'jari' | 'cetran' | 'vencido'
+export type Fase = 'defesa_previa' | 'jari' | 'cetran' | 'vencido' // 'vencido' mantido só pra compat. com pedidos antigos
 export type PrazoStatusValue = 'valido' | 'vencido'
 
 export interface PhaseInput {
-  tipo_notificacao: TipoNotificacao | null | undefined
+  tipo_notificacao: 'NA' | 'NP' | 'desconhecido' | null | undefined
   data_notificacao: Date | string | null | undefined
   now?: Date
   prazoDias?: number
 }
 
 export interface PhaseResult {
-  fase: Fase
+  fase: 'defesa_previa' | 'jari'
   prazo_status: PrazoStatusValue
   prazo_limite: Date | null
   dias_restantes: number | null
-  motivo?: string
 }
 
 export function routePhase(input: PhaseInput): PhaseResult {
@@ -28,28 +28,18 @@ export function routePhase(input: PhaseInput): PhaseResult {
   const tipo = input.tipo_notificacao ?? null
   const dataNotif = parseDate(input.data_notificacao)
 
-  if (!tipo || tipo === 'desconhecido') {
-    return vencidoResult(null, null, 'Tipo de notificação não identificado')
-  }
+  // Fase determinada pelo tipo. Se desconhecido, default = defesa_previa.
+  const fase: 'defesa_previa' | 'jari' = tipo === 'NP' ? 'jari' : 'defesa_previa'
+
   if (!dataNotif) {
-    return vencidoResult(null, null, 'Data da notificação ausente')
+    return { fase, prazo_status: 'valido', prazo_limite: null, dias_restantes: null }
   }
 
   const prazo_limite = addDays(dataNotif, prazoDias)
   const dias_restantes = daysDiff(prazo_limite, now)
-  const vencido = dias_restantes < 0
+  const prazo_status: PrazoStatusValue = dias_restantes >= 0 ? 'valido' : 'vencido'
 
-  if (vencido) {
-    return vencidoResult(prazo_limite, dias_restantes, 'Prazo administrativo encerrado')
-  }
-  if (tipo === 'NA') {
-    return { fase: 'defesa_previa', prazo_status: 'valido', prazo_limite, dias_restantes }
-  }
-  return { fase: 'jari', prazo_status: 'valido', prazo_limite, dias_restantes }
-}
-
-function vencidoResult(prazo_limite: Date | null, dias_restantes: number | null, motivo: string): PhaseResult {
-  return { fase: 'vencido', prazo_status: 'vencido', prazo_limite, dias_restantes, motivo }
+  return { fase, prazo_status, prazo_limite, dias_restantes }
 }
 
 function parseDate(d: Date | string | null | undefined): Date | null {
@@ -67,6 +57,5 @@ function addDays(date: Date, days: number): Date {
 
 function daysDiff(target: Date, from: Date): number {
   const toMidnight = (x: Date) => Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate())
-  const ms = toMidnight(target) - toMidnight(from)
-  return Math.floor(ms / 86_400_000)
+  return Math.floor((toMidnight(target) - toMidnight(from)) / 86_400_000)
 }

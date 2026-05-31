@@ -1,4 +1,4 @@
-// Gera a peça (chamada 2 Sonnet) + PDF, e marca order como 'gerado'.
+// Gera a peça (chamada 2 Sonnet) + PDF. Não bloqueia mais por fase.
 import fs from 'fs/promises'
 import path from 'path'
 import PDFDocument from 'pdfkit'
@@ -30,9 +30,10 @@ export async function generateRecursoForOrder(orderId: string): Promise<{ pdfPat
   if (!order.fine_data) throw new Error('Pedido sem dados da multa')
   if (!order.driver_data) throw new Error('Pedido sem dados do condutor')
   if (!order.driver_input) throw new Error('Pedido sem motivo do condutor')
-  if (order.fase === 'vencido') throw new Error('Pedido com prazo vencido — não gera')
 
-  const tipo = promptTipoPorFase(order.fase)
+  // Se fase ainda está como 'vencido' (legado), trata como defesa_previa por default
+  const faseEfetiva: Fase = order.fase === 'vencido' ? 'defesa_previa' : (order.fase ?? 'defesa_previa')
+  const tipo = promptTipoPorFase(faseEfetiva)
   const template = await getActivePrompt(tipo)
 
   const fineData = {
@@ -64,7 +65,7 @@ export async function generateRecursoForOrder(orderId: string): Promise<{ pdfPat
 
   const { texto } = await generateRecursoText({ systemPrompt })
 
-  const pdfPath = await writePdf(orderId, texto, order.fase)
+  const pdfPath = await writePdf(orderId, texto, faseEfetiva)
 
   await prisma.$transaction([
     prisma.recurso.upsert({
@@ -74,11 +75,11 @@ export async function generateRecursoForOrder(orderId: string): Promise<{ pdfPat
     }),
     prisma.order.update({
       where: { id: orderId },
-      data: { status: 'gerado', generated_at: new Date() },
+      data: { status: 'gerado', generated_at: new Date(), fase: faseEfetiva },
     }),
   ])
 
-  await logEvent({ tipo: 'gerado', order_id: orderId, metadata: { fase: order.fase, chars: texto.length } })
+  await logEvent({ tipo: 'gerado', order_id: orderId, metadata: { fase: faseEfetiva, chars: texto.length } })
 
   return { pdfPath, texto }
 }

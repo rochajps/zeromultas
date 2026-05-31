@@ -5,7 +5,7 @@ import { formatBRL } from '@/lib/pricing'
 
 export const dynamic = 'force-dynamic'
 
-const STATUSES = ['analisado', 'aguardando_pagamento', 'pago', 'gerado', 'entregue', 'vencido'] as const
+const STATUSES = ['analisado', 'aguardando_pagamento', 'pago', 'gerado', 'entregue'] as const
 
 export default async function PedidosPage({ searchParams }: { searchParams: { status?: string } }) {
   const filter = searchParams.status && (STATUSES as readonly string[]).includes(searchParams.status)
@@ -89,7 +89,6 @@ function StatusBadge({ s }: { s: string }) {
     pago: 'bg-blue-100 text-blue-800',
     gerado: 'bg-emerald-100 text-emerald-800',
     entregue: 'bg-emerald-100 text-emerald-800',
-    vencido: 'bg-red-100 text-red-800',
   }
   return <span className={`rounded-full px-2 py-0.5 text-xs ${colors[s] ?? 'bg-slate-100'}`}>{s}</span>
 }

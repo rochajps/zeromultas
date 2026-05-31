@@ -4,12 +4,11 @@ import { prisma } from '@/lib/prisma'
 export const dynamic = 'force-dynamic'
 
 export default async function AdminDashboard() {
-  const [orders, pendentes, pagos, gerados, vencidos] = await Promise.all([
+  const [orders, pendentes, pagos, gerados] = await Promise.all([
     prisma.order.count(),
     prisma.order.count({ where: { status: 'aguardando_pagamento' } }),
     prisma.order.count({ where: { status: 'pago' } }),
     prisma.order.count({ where: { status: { in: ['gerado', 'entregue'] } } }),
-    prisma.order.count({ where: { status: 'vencido' } }),
   ])
 
   const cards = [
@@ -17,7 +16,6 @@ export default async function AdminDashboard() {
     { label: 'Aguardando Pix', value: pendentes, href: '/admin/pedidos?status=aguardando_pagamento' },
     { label: 'Pagos', value: pagos, href: '/admin/pedidos?status=pago' },
     { label: 'Recursos entregues', value: gerados, href: '/admin/pedidos?status=gerado' },
-    { label: 'Vencidos', value: vencidos, href: '/admin/pedidos?status=vencido' },
   ]
 
   return (
