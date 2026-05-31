@@ -78,6 +78,7 @@ model Order {
   driver_input DriverInput?
   recurso      Recurso?
   events       Event[]
+  api_usage    ApiUsage[]
   price_tier   PriceTier?   @relation(fields: [faixa_id], references: [id])
 
   @@index([status])
@@ -207,4 +208,22 @@ model Setting {
   description  String
   group        String   @default("geral")
   updated_at   DateTime @updatedAt
+}
+
+model ApiUsage {
+  id                          Int      @id @default(autoincrement())
+  order_id                    String?
+  kind                        String
+  model                       String
+  input_tokens                Int
+  output_tokens               Int
+  cache_creation_input_tokens Int      @default(0)
+  cache_read_input_tokens     Int      @default(0)
+  request_id                  String?
+  created_at                  DateTime @default(now())
+
+  order Order? @relation(fields: [order_id], references: [id], onDelete: SetNull)
+
+  @@index([kind, created_at])
+  @@index([order_id])
 }

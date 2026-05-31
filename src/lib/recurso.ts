@@ -6,6 +6,8 @@ import { prisma } from './prisma'
 import { getActivePrompt, renderPrompt } from './prompts'
 import { generateRecursoText } from './anthropic'
 import { logEvent } from './events'
+import { recordApiUsage } from './usage'
+import { MODEL_GENERATION } from './anthropic'
 import type { Fase, PromptTipo } from '@prisma/client'
 
 const STORAGE_DIR = process.env.RECURSOS_DIR ?? path.resolve(process.cwd(), 'storage', 'recursos')
@@ -63,7 +65,8 @@ export async function generateRecursoForOrder(orderId: string): Promise<{ pdfPat
     ORGAO_AUTUADOR: order.fine_data.orgao_autuador ?? 'AUTORIDADE AUTUADORA',
   })
 
-  const { texto } = await generateRecursoText({ systemPrompt })
+  const { texto, usage: genUsage } = await generateRecursoText({ systemPrompt })
+  await recordApiUsage({ order_id: orderId, kind: 'geracao', model: MODEL_GENERATION, usage: genUsage })
 
   const pdfPath = await writePdf(orderId, texto, faseEfetiva)
 

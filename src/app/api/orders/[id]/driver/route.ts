@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { getActivePrompt } from '@/lib/prompts'
 import { extractCNH } from '@/lib/anthropic'
 import { logEvent } from '@/lib/events'
+import { recordApiUsage } from '@/lib/usage'
+import { MODEL_ANALYSIS } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -58,7 +60,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       const buffer = Buffer.from(await file.arrayBuffer())
       const systemPrompt = await getActivePrompt('extracao_cnh')
-      const { data: cnh } = await extractCNH({ buffer, mimeType: file.type, systemPrompt })
+      const { data: cnh, usage: cnhUsage } = await extractCNH({ buffer, mimeType: file.type, systemPrompt })
+      await recordApiUsage({ order_id: orderId, kind: 'extracao_cnh', model: MODEL_ANALYSIS, usage: cnhUsage })
 
       if (!cnh.nome || !cnh.cpf || !cnh.num_cnh) {
         return NextResponse.json(

@@ -8,6 +8,8 @@ import { computeScore } from '@/lib/scoring'
 import { logEvent } from '@/lib/events'
 import { getSettings } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
+import { recordApiUsage } from '@/lib/usage'
+import { MODEL_ANALYSIS } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest) {
     const settings = await getSettings()
     const systemPrompt = await getActivePrompt('analise')
 
-    const { data: analise } = await analyzeFine({ buffer, mimeType: file.type, systemPrompt })
+    const { data: analise, usage: analiseUsage } = await analyzeFine({ buffer, mimeType: file.type, systemPrompt })
     // imagem descartada
 
     const dataNotif = analise.data_notificacao ? new Date(analise.data_notificacao) : null
