@@ -28,7 +28,7 @@ export default function PrivacidadePage() {
           <p>
             Zero Multas é um serviço de geração de recursos administrativos de multa de trânsito por inteligência
             artificial, em fase administrativa (defesa prévia e recurso à JARI). Para questões de privacidade,
-            o contato é o e-mail <a className="text-blue-600 underline" href="mailto:alexandre.piovesan@icloud.com">alexandre.piovesan@icloud.com</a>.
+            o contato é o e-mail <a className="text-blue-600 underline" href="mailto:zeromultasgo@gmail.com">zeromultasgo@gmail.com</a>.
           </p>
         </Section>
 
@@ -124,7 +124,7 @@ export default function PrivacidadePage() {
           </ul>
           <p className="mt-3">
             Para exercer qualquer um desses direitos, escreva para{' '}
-            <a className="text-blue-600 underline" href="mailto:alexandre.piovesan@icloud.com">alexandre.piovesan@icloud.com</a>.
+            <a className="text-blue-600 underline" href="mailto:zeromultasgo@gmail.com">zeromultasgo@gmail.com</a>.
             Responderemos em até 15 dias.
           </p>
         </Section>
