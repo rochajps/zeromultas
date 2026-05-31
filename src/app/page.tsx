@@ -245,6 +245,27 @@ function Uploader() {
 
   const resetTurnstile = useCallback(() => {
     setTurnstileToken('')
+    const w = window as unknown as { turnstile?: { reset: (id: string) => void } }
+    if (w.turnstile && widgetIdRef.current) {
+      try { w.turnstile.reset(widgetIdRef.current) } catch (e) { console.error('[turnstile] reset', e) }
+    }
+  }, [])
+
+  // Fallback: se o token não chegar em 6s, mostra botão pra recarregar a verificação
+  const [needsReload, setNeedsReload] = useState(false)
+  useEffect(() => {
+    if (turnstileToken) {
+      setNeedsReload(false)
+      return
+    }
+    const t = setTimeout(() => setNeedsReload(true), 6000)
+    return () => clearTimeout(t)
+  }, [turnstileToken])
+
+  // Hard reload do widget: remove e renderiza novo do zero (último recurso)
+  const hardReloadTurnstile = useCallback(() => {
+    setNeedsReload(false)
+    setTurnstileToken('')
     const w = window as unknown as {
       turnstile?: {
         remove: (id: string) => void
@@ -252,21 +273,24 @@ function Uploader() {
       }
     }
     if (!w.turnstile || !turnstileRef.current) return
-    // Remove o widget antigo e cria um novo — garante token fresco
     if (widgetIdRef.current) {
       try { w.turnstile.remove(widgetIdRef.current) } catch {}
       widgetIdRef.current = null
     }
     const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
     if (!siteKey) return
-    widgetIdRef.current = w.turnstile.render(turnstileRef.current, {
-      sitekey: siteKey,
-      callback: (token: string) => setTurnstileToken(token),
-      'expired-callback': () => setTurnstileToken(''),
-      'error-callback': () => setTurnstileToken(''),
-      theme: 'light',
-      size: 'flexible',
-    })
+    setTimeout(() => {
+      const ww = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string } }
+      if (!ww.turnstile || !turnstileRef.current) return
+      widgetIdRef.current = ww.turnstile.render(turnstileRef.current, {
+        sitekey: siteKey,
+        callback: (token: string) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+        theme: 'light',
+        size: 'flexible',
+      })
+    }, 100)
   }, [])
 
   const upload = useCallback(
@@ -403,11 +427,23 @@ function Uploader() {
             <p className="mt-5 flex items-center justify-center gap-1.5 text-xs text-slate-500">
               <LockIcon className="h-3.5 w-3.5" /> A imagem é processada e descartada — não guardamos seu arquivo.
             </p>
-            {!turnstileToken && (
+            {!turnstileToken && !needsReload && (
               <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-amber-700">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
                 Validando segurança da sessão…
               </p>
+            )}
+            {!turnstileToken && needsReload && (
+              <div className="mt-2 text-center">
+                <p className="text-xs text-red-700">Verificação travada. Clique pra tentar de novo:</p>
+                <button
+                  type="button"
+                  onClick={hardReloadTurnstile}
+                  className="mt-1 inline-block rounded-md bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-brand-blue-dark"
+                >
+                  ↻ Reiniciar verificação
+                </button>
+              </div>
             )}
 
           <div ref={turnstileRef} className="mt-3 flex justify-center" />
