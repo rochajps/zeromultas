@@ -106,7 +106,11 @@ export default function DadosPage({ params }: Props) {
       const data = await res.json()
       if (!res.ok) {
         if (data.requires_manual) {
-          setError('Não conseguimos ler a foto. Use a opção "Digitar manualmente" abaixo.')
+          // pré-preenche o que a IA conseguiu ler — o user só completa o que faltar
+          if (data.parcial?.nome) setNome(String(data.parcial.nome).toUpperCase())
+          if (data.parcial?.cpf) setCpf(maskCpf(String(data.parcial.cpf)))
+          if (data.parcial?.num_cnh) setCnh(maskCnh(String(data.parcial.num_cnh)))
+          setError('Não conseguimos ler todos os campos da foto. Confira e complete abaixo.')
           setModo('manual')
         } else {
           throw new Error(data.error ?? 'Falha ao salvar')
@@ -307,6 +311,26 @@ export default function DadosPage({ params }: Props) {
           >
             {loading ? 'Processando…' : 'Continuar pro pagamento'}
           </button>
+
+          {!podeEnviar && !loading && (() => {
+            const faltam: string[] = []
+            if (endereco.length < 5) faltam.push('endereço')
+            if (cepDigits.length !== 8) faltam.push('CEP completo')
+            if (whatsappDigits.length < 10) faltam.push('WhatsApp')
+            if (!lgpd) faltam.push('aceitar a política')
+            if (modo === 'foto' && !file) faltam.push('foto da CNH')
+            if (modo === 'manual') {
+              if (nome.length < 5) faltam.push('nome completo')
+              if (cpfDigits.length !== 11) faltam.push('CPF completo')
+              if (cnhDigits.length < 9) faltam.push('nº CNH')
+            }
+            if (faltam.length === 0) return null
+            return (
+              <p className="text-xs text-slate-500">
+                Falta preencher: <strong className="text-slate-700">{faltam.join(', ')}</strong>
+              </p>
+            )
+          })()}
         </form>
       </div>
     </main>
