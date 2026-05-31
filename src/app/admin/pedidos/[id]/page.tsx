@@ -124,6 +124,10 @@ export default async function PedidoDetailPage({
             ['Valor', order.fine_data.valor_multa_centavos ? formatBRL(order.fine_data.valor_multa_centavos) : null],
             ['Vício forte', order.fine_data.vicio_forte ? `Sim — ${order.fine_data.vicio_razao}` : 'Não'],
             ['Score', String(order.fine_data.score ?? '—')],
+            ['Origem dos dados', order.origem_dados ?? '—'],
+            ['Verificado', order.verificado ? 'Sim' : 'Não'],
+            ['Tipo doc', order.tipo_documento ?? '—'],
+            ['Status análise', order.analise_status ?? '—'],
           ]} />
         ) : <Empty />}
       </Section>

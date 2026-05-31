@@ -10,6 +10,7 @@ import { logEvent } from '@/lib/events'
 import { getSettings } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
 import { recordApiUsage } from '@/lib/usage'
+import { validateAnaliseOutput, decideAnaliseStatus, STATUS_MSGS, type AnaliseStatus } from '@/lib/analise-validator'
 import {
   detectMimeFromBuffer,
   checkHoneypot,
@@ -117,7 +118,8 @@ export async function POST(req: NextRequest) {
   // ============================================================
   const settings = await getSettings()
   const fileHash = sha256Hex(buffer)
-  let analise: Awaited<ReturnType<typeof analyzeFine>>['data'] | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let analise: any = null
   let cacheHit = false
 
   const cached = await getCachedAnalysis(fileHash)
@@ -172,6 +174,36 @@ export async function POST(req: NextRequest) {
     }
 
     if (!analise) throw new Error('Análise vazia')
+
+    // Validação estrita do JSON da análise
+    const validated = validateAnaliseOutput(analise)
+    if (!validated.ok) {
+      const attempts = Number(req.cookies.get('zm_uploads')?.value ?? '0') + 1
+      const res = NextResponse.json({
+        error: STATUS_MSGS.schema_invalido,
+        analise_status: 'schema_invalido' as AnaliseStatus,
+        attempts,
+        suggest_manual: attempts >= 2,
+      }, { status: 422 })
+      res.cookies.set('zm_uploads', String(attempts), { maxAge: 3600, sameSite: 'lax', path: '/' })
+      await logEvent({ tipo: 'analise_falha', user_agent: ua, ip, metadata: { reason: validated.reason } })
+      return res
+    }
+    analise = validated.data
+
+    const analiseStatus: AnaliseStatus = decideAnaliseStatus(analise)
+    if (analiseStatus !== 'valido' && analiseStatus !== 'multa_nao_suportada') {
+      const attempts = Number(req.cookies.get('zm_uploads')?.value ?? '0') + 1
+      const res = NextResponse.json({
+        error: STATUS_MSGS[analiseStatus],
+        analise_status: analiseStatus,
+        attempts,
+        suggest_manual: attempts >= 2,
+      }, { status: 422 })
+      res.cookies.set('zm_uploads', String(attempts), { maxAge: 3600, sameSite: 'lax', path: '/' })
+      await logEvent({ tipo: 'analise_falha', user_agent: ua, ip, metadata: { analise_status: analiseStatus, tipo_documento: analise.tipo_documento } })
+      return res
+    }
 
     const dataNotif = analise.data_notificacao ? new Date(analise.data_notificacao) : null
     const dataInfr = analise.data_infracao ? new Date(analise.data_infracao) : null
@@ -231,6 +263,10 @@ export async function POST(req: NextRequest) {
         vicios_finais: rota.vicios_finais as never,
         score_band: rota.score_band,
         permite_arguir_sumula_312: rota.permite_arguir_sumula_312,
+        analise_status: analiseStatus,
+        tipo_documento: analise.tipo_documento,
+        verificado: analiseStatus === 'valido',
+        origem_dados: 'analise',
         analisado_em: new Date(),
         ...utm,
         fine_data: {
@@ -287,7 +323,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    const okRes = NextResponse.json({
       orderId: order.id,
       is_multa: analise.is_multa,
       fase: phase.fase,
@@ -304,6 +340,8 @@ export async function POST(req: NextRequest) {
       data_missing: dataMissing,
       preco_centavos,
     })
+    okRes.cookies.set('zm_uploads', '0', { maxAge: 0, path: '/' })
+    return okRes
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[upload]', msg)

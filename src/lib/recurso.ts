@@ -99,8 +99,10 @@ export async function generateRecursoForOrder(orderId: string): Promise<{ pdfPat
   const tipo = promptTipoPorFase(faseEfetiva)
   const template = await getActivePrompt(tipo)
 
-  // Modo de geração — usa o salvo no Order, ou default 'generico' (não bloqueia)
-  const modo: ModoGeracao = order.modo_geracao ?? 'generico'
+  // Modo de geração — manual ou não-verificado SEMPRE generico (segurança)
+  const modoRaw: ModoGeracao = order.modo_geracao ?? 'generico'
+  const modo: ModoGeracao =
+    order.origem_dados === 'manual' || order.verificado === false ? 'generico' : modoRaw
   const permite_sumula_312 = order.permite_arguir_sumula_312 ?? false
   const vicios_finais = (order.vicios_finais as unknown as object[]) ?? []
 

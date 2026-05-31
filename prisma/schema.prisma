@@ -71,6 +71,10 @@ model Order {
   data_missing          Boolean       @default(false)
   valor_missing         Boolean       @default(false)
   cnh_manual            Boolean       @default(false)
+  analise_status            AnaliseStatus?
+  tipo_documento            String?
+  verificado                Boolean       @default(true)
+  origem_dados              OrigemDados   @default(analise)
   modo_geracao              ModoGeracao?
   vicios_finais             Json?
   score_band                ScoreBand?
@@ -81,7 +85,8 @@ model Order {
   paid_at               DateTime?
   generated_at          DateTime?
 
-  fine_data    FineData?
+  fine_data           FineData?
+  manual_fine_data    ManualFineData?
   driver_data  DriverData?
   driver_input DriverInput?
   recurso      Recurso?
@@ -335,4 +340,37 @@ model EventMapping {
   updated_at  DateTime @updatedAt
 
   @@unique([step, platform])
+}
+
+
+enum AnaliseStatus {
+  valido
+  multa_nao_suportada
+  nao_multa
+  ilegivel
+  suspeito
+  baixa_confianca
+  schema_invalido
+}
+
+enum OrigemDados {
+  analise
+  manual
+}
+
+model ManualFineData {
+  id                Int       @id @default(autoincrement())
+  order_id          String    @unique
+  tipo_notificacao  String?
+  orgao_autuador    String?
+  num_ait           String?
+  codigo_infracao   String?
+  descricao_infracao String?
+  data_infracao     DateTime?
+  data_notificacao  DateTime?
+  placa             String?
+  valor_centavos    Int?
+  created_at        DateTime  @default(now())
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
 }
