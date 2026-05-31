@@ -324,12 +324,13 @@ function Uploader() {
       <div
         onDragOver={(e) => {
           e.preventDefault()
-          setDragOver(true)
+          if (turnstileToken) setDragOver(true)
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
           e.preventDefault()
           setDragOver(false)
+          if (!turnstileToken) return
           const f = e.dataTransfer.files?.[0]
           if (f) upload(f)
         }}
@@ -382,10 +383,11 @@ function Uploader() {
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-blue px-5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-blue-dark active:scale-[0.98]"
+                disabled={!turnstileToken}
+                className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold shadow-sm transition active:scale-[0.98] ${turnstileToken ? 'bg-brand-blue text-white hover:bg-brand-blue-dark' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
               >
                 <FileIcon className="h-5 w-5" />
-                <span>Selecionar arquivo</span>
+                <span>{turnstileToken ? 'Selecionar arquivo' : 'Validando…'}</span>
               </button>
               <button
                 type="button"
