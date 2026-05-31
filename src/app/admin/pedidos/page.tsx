@@ -15,7 +15,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: { st
     where: filter ? { status: filter } : {},
     orderBy: { created_at: 'desc' },
     take: 200,
-    include: { fine_data: { select: { placa: true, descricao_infracao: true } }, driver_data: { select: { nome: true } } },
+    include: { fine_data: { select: { placa: true, descricao_infracao: true } }, driver_data: { select: { nome: true } }, recurso: { select: { id: true } } },
   })
 
   return (
@@ -52,15 +52,16 @@ export default async function PedidosPage({ searchParams }: { searchParams: { st
               <th className="p-3">Placa</th>
               <th className="p-3">Valor multa</th>
               <th className="p-3">Preço</th>
+              <th className="p-3">Recurso</th>
               <th className="p-3">Criado</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
             {orders.length === 0 && (
-              <tr><td colSpan={8} className="p-8 text-center text-slate-400">Sem pedidos</td></tr>
+              <tr><td colSpan={9} className="p-8 text-center text-slate-400">Sem pedidos</td></tr>
             )}
             {orders.map((o) => (
-              <tr key={o.id} className="hover:bg-slate-50">
+              <tr key={o.id} className={`hover:bg-slate-50 ${o.recurso ? 'bg-emerald-50/40' : ''}`}>
                 <td className="p-2 font-mono text-xs">
                   <Link href={`/admin/pedidos/${o.id}`} className="text-blue-600 hover:underline">
                     {o.id.slice(0, 10)}
@@ -72,6 +73,19 @@ export default async function PedidosPage({ searchParams }: { searchParams: { st
                 <td className="p-2 text-xs font-mono">{o.fine_data?.placa ?? '—'}</td>
                 <td className="p-2 text-xs">{o.valor_multa_centavos ? formatBRL(o.valor_multa_centavos) : '—'}</td>
                 <td className="p-2 text-xs font-semibold">{o.preco_centavos ? formatBRL(o.preco_centavos) : '—'}</td>
+                <td className="p-2">
+                  {o.recurso ? (
+                    <a
+                      href={`/api/admin/pedidos/${o.id}/download`}
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-200"
+                      title="Baixar PDF"
+                    >
+                      📥 PDF
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-300">—</span>
+                  )}
+                </td>
                 <td className="p-2 text-xs text-slate-500">{formatDateTimeBR(o.created_at)}</td>
               </tr>
             ))}
