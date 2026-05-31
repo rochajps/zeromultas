@@ -4,7 +4,7 @@
 export const PRAZO_DIAS_DEFAULT = 30 // art. 281-A do CTB (defesa prévia) e art. 285 (JARI)
 
 export type TipoNotificacao = 'NA' | 'NP' | 'desconhecido'
-export type Fase = 'defesa_previa' | 'jari' | 'vencido'
+export type Fase = 'defesa_previa' | 'jari' | 'cetran' | 'vencido'
 export type PrazoStatusValue = 'valido' | 'vencido'
 
 export interface PhaseInput {

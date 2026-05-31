@@ -2,6 +2,10 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
+import { formatDateBR } from '@/lib/format'
+import { getSettings } from '@/lib/settings'
+import { routePhase, type Fase } from '@/lib/phase-router'
+import { computeScore } from '@/lib/scoring'
 import { CompleteDataForm, CetranCta, ScoreBadge, TrackResultView } from './client'
 
 export const dynamic = 'force-dynamic'
@@ -18,8 +22,47 @@ export default async function ResultadoPage({ params }: PageProps) {
   if (!order) notFound()
 
   const fineData = order.fine_data
+  const settings = await getSettings()
+
+  // Se o pedido ainda não foi pago, recalculamos a fase com as regras ATUAIS do admin.
+  // Pedidos com status >= pago mantêm o estado salvo no banco (não mexer no histórico).
+  const recalculavel = order.status === 'analisado' || order.status === 'vencido' || order.status === 'aguardando_pagamento'
+  let fase: Fase | null = order.fase
+  let prazoStatus: 'valido' | 'vencido' | null = order.prazo_status
+  let prazoLimite: Date | null = order.prazo_limite
+
+  if (recalculavel && fineData && !order.data_missing) {
+    const phase = routePhase({
+      tipo_notificacao: fineData.tipo_notificacao,
+      data_notificacao: fineData.data_notificacao,
+      prazoDias: settings.prazo_dias,
+    })
+    fase = phase.fase
+    prazoStatus = phase.prazo_status
+    prazoLimite = phase.prazo_limite
+
+    // Aplica bloqueio "venda próxima do vencimento" só pra orders ainda não pagas
+    if (
+      settings.cobrar_proximo_vencimento_dias > 0 &&
+      phase.dias_restantes != null &&
+      phase.dias_restantes < settings.cobrar_proximo_vencimento_dias
+    ) {
+      fase = 'vencido'
+      prazoStatus = 'vencido'
+    }
+  }
+
+  const score = fineData
+    ? computeScore({
+        vicio_forte: fineData.vicio_forte ?? false,
+        prazo_status: prazoStatus ?? 'valido',
+        is_multa: fineData.is_multa ?? false,
+        config: settings,
+      })
+    : null
+
   const precisaCompletar = order.valor_missing || order.data_missing
-  const vencido = order.fase === 'vencido' || order.status === 'vencido'
+  const vencido = fase === 'vencido'
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -30,7 +73,7 @@ export default async function ResultadoPage({ params }: PageProps) {
         </Link>
 
         {!fineData?.is_multa ? (
-          <NaoEhMulta />
+          <NaoEhMulta mensagem={settings.msg_nao_eh_multa} />
         ) : precisaCompletar && !vencido ? (
           <CompleteDataForm
             orderId={order.id}
@@ -39,22 +82,23 @@ export default async function ResultadoPage({ params }: PageProps) {
           />
         ) : vencido ? (
           <>
-            <Vencido prazoLimite={order.prazo_limite} fase={order.fase} />
+            <Vencido prazoLimite={prazoLimite} mensagem={settings.msg_score_vencido} />
             <CetranCta orderId={order.id} />
           </>
         ) : (
           <Diagnostico
             orderId={order.id}
-            fase={order.fase!}
-            score={fineData.score ?? 0}
+            fase={fase as 'defesa_previa' | 'jari' | 'cetran'}
+            score={score?.score ?? 0}
             vicioForte={fineData.vicio_forte ?? false}
             vicioRazao={fineData.vicio_razao}
+            mensagem={score?.mensagem ?? ''}
             placa={fineData.placa}
             descricao={fineData.descricao_infracao}
             valorMulta={fineData.valor_multa_centavos}
             preco={order.preco_centavos}
             faixaLabel={order.price_tier?.faixa ?? null}
-            prazoLimite={order.prazo_limite}
+            prazoLimite={prazoLimite}
           />
         )}
       </div>
@@ -62,14 +106,11 @@ export default async function ResultadoPage({ params }: PageProps) {
   )
 }
 
-function NaoEhMulta() {
+function NaoEhMulta({ mensagem }: { mensagem: string }) {
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
       <h1 className="text-xl font-bold text-amber-900">Não identificamos uma multa válida</h1>
-      <p className="mt-2 text-sm text-amber-800">
-        A imagem enviada não parece ser uma notificação de multa de trânsito. Confirme que é uma NA (Notificação de
-        Autuação) ou NP (Notificação de Penalidade) e envie novamente.
-      </p>
+      <p className="mt-2 text-sm text-amber-800">{mensagem}</p>
       <Link href="/" className="mt-4 inline-block rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white">
         Enviar outra imagem
       </Link>
@@ -77,17 +118,15 @@ function NaoEhMulta() {
   )
 }
 
-function Vencido({ prazoLimite, fase }: { prazoLimite: Date | null; fase: string | null }) {
+function Vencido({ prazoLimite, mensagem }: { prazoLimite: Date | null; mensagem: string }) {
   return (
     <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
       <h1 className="text-xl font-bold text-red-900">Prazo administrativo encerrado</h1>
-      <p className="mt-2 text-sm text-red-800">
-        O prazo legal de 30 dias para defesa prévia/recurso à JARI já encerrou
-        {prazoLimite ? ` em ${prazoLimite.toLocaleDateString('pt-BR')}` : ''}. Não cobramos por recurso intempestivo.
-      </p>
-      <p className="mt-3 text-sm text-red-800">
-        <strong>Mas ainda existe uma alternativa:</strong> se você já recorreu à JARI e teve a decisão negada,
-        ainda cabe recurso ao CETRAN (3ª instância) — também tem prazo de 30 dias contados da ciência da decisão.
+      <p className="mt-2 whitespace-pre-line text-sm text-red-800">
+        {mensagem}
+        {prazoLimite && (
+          <span className="block mt-2 text-xs">Prazo limite: <strong>{formatDateBR(prazoLimite)}</strong></span>
+        )}
       </p>
     </div>
   )
@@ -95,10 +134,11 @@ function Vencido({ prazoLimite, fase }: { prazoLimite: Date | null; fase: string
 
 function Diagnostico(props: {
   orderId: string
-  fase: 'defesa_previa' | 'jari' | 'cetran' | string
+  fase: 'defesa_previa' | 'jari' | 'cetran'
   score: number
   vicioForte: boolean
   vicioRazao: string | null
+  mensagem: string
   placa: string | null
   descricao: string | null
   valorMulta: number | null
@@ -109,8 +149,7 @@ function Diagnostico(props: {
   const faseLabel =
     props.fase === 'defesa_previa' ? 'Defesa Prévia' :
     props.fase === 'jari' ? 'Recurso à JARI' :
-    props.fase === 'cetran' ? 'Recurso ao CETRAN' :
-    'Recurso'
+    'Recurso ao CETRAN'
 
   return (
     <div className="space-y-4">
@@ -119,7 +158,7 @@ function Diagnostico(props: {
         <h1 className="mt-1 text-2xl font-bold">{faseLabel}</h1>
         {props.prazoLimite && (
           <p className="mt-1 text-sm text-slate-600">
-            Prazo até <strong>{props.prazoLimite.toLocaleDateString('pt-BR')}</strong>
+            Prazo até <strong>{formatDateBR(props.prazoLimite)}</strong>
           </p>
         )}
 
@@ -133,11 +172,7 @@ function Diagnostico(props: {
               ✓ Encontramos um erro formal: <strong>{props.vicioRazao ?? '—'}</strong>. Boa pedida pra anular.
             </p>
           ) : (
-            <p className="mt-3 text-sm text-slate-600">
-              Não encontramos um erro formal claro, mas <strong>ainda vale tentar</strong>: o recurso é gratuito,
-              suspende pontos enquanto está em análise e o seu motivo será fundamentado tecnicamente.
-              <span className="block text-xs text-slate-500 mt-1">(Sem garantia de êxito — depende do órgão julgador.)</span>
-            </p>
+            <p className="mt-3 whitespace-pre-line text-sm text-slate-600">{props.mensagem}</p>
           )}
         </div>
 

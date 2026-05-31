@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
 
@@ -71,7 +72,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: { st
                 <td className="p-2 text-xs font-mono">{o.fine_data?.placa ?? '—'}</td>
                 <td className="p-2 text-xs">{o.valor_multa_centavos ? formatBRL(o.valor_multa_centavos) : '—'}</td>
                 <td className="p-2 text-xs font-semibold">{o.preco_centavos ? formatBRL(o.preco_centavos) : '—'}</td>
-                <td className="p-2 text-xs text-slate-500">{o.created_at.toLocaleString('pt-BR')}</td>
+                <td className="p-2 text-xs text-slate-500">{formatDateTimeBR(o.created_at)}</td>
               </tr>
             ))}
           </tbody>

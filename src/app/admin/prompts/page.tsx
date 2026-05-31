@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { revalidatePath } from 'next/cache'
 import type { PromptTipo } from '@prisma/client'
 
@@ -9,6 +10,7 @@ const TIPOS: { id: PromptTipo; label: string }[] = [
   { id: 'extracao_cnh', label: 'Extração de CNH (Haiku)' },
   { id: 'geracao_defesa_previa', label: 'Geração: Defesa Prévia (Sonnet, pós-pagamento)' },
   { id: 'geracao_jari', label: 'Geração: Recurso à JARI (Sonnet, pós-pagamento)' },
+  { id: 'geracao_cetran', label: 'Geração: Recurso ao CETRAN (Sonnet, 3ª instância)' },
 ]
 
 async function novaVersao(formData: FormData) {
@@ -99,7 +101,7 @@ export default async function PromptsPage({ searchParams }: { searchParams: { ti
                   <strong>v{v.versao}</strong> {v.ativo && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">ativa</span>}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {v.notas ?? '—'} · {v.created_at.toLocaleString('pt-BR')}
+                  {v.notas ?? '—'} · {formatDateTimeBR(v.created_at)}
                 </p>
               </div>
               {!v.ativo && (

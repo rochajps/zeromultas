@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const dataMissing = !dataNotif
     const valorMissing = !analise.valor_multa_centavos
 
-    let fase: 'defesa_previa' | 'jari' | 'vencido' = 'defesa_previa'
+    let fase: 'defesa_previa' | 'jari' | 'cetran' | 'vencido' = 'defesa_previa'
     let prazo_status: 'valido' | 'vencido' = 'valido'
     let prazo_limite: Date | null = null
     let diasRestantes: number | null = null

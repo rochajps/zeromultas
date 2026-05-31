@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
@@ -50,8 +51,8 @@ export default async function PerfilPage({ searchParams }: { searchParams: { msg
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
           <div><dt className="text-slate-500">Login</dt><dd className="font-medium">{user?.login}</dd></div>
           <div><dt className="text-slate-500">Nome</dt><dd className="font-medium">{user?.nome ?? '—'}</dd></div>
-          <div><dt className="text-slate-500">Criado em</dt><dd>{user?.created_at.toLocaleString('pt-BR')}</dd></div>
-          <div><dt className="text-slate-500">Último login</dt><dd>{user?.last_login_at?.toLocaleString('pt-BR') ?? '—'}</dd></div>
+          <div><dt className="text-slate-500">Criado em</dt><dd>{formatDateTimeBR(user?.created_at)}</dd></div>
+          <div><dt className="text-slate-500">Último login</dt><dd>{formatDateTimeBR(user?.last_login_at)}</dd></div>
         </dl>
       </div>
 

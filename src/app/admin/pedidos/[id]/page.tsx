@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { formatDateBR, formatDateTimeBR } from '@/lib/format'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { formatBRL } from '@/lib/pricing'
@@ -19,7 +20,7 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
         <p className="text-xs uppercase text-slate-500">Pedido</p>
         <h1 className="font-mono text-xl font-bold">{order.id}</h1>
         <p className="text-sm text-slate-600">
-          Status: <strong>{order.status}</strong> · Fase: <strong>{order.fase}</strong> · Criado em {order.created_at.toLocaleString('pt-BR')}
+          Status: <strong>{order.status}</strong> · Fase: <strong>{order.fase}</strong> · Criado em {formatDateTimeBR(order.created_at)}
         </p>
       </div>
 
@@ -31,8 +32,8 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
             ['AIT', order.fine_data.num_ait],
             ['Código', order.fine_data.codigo_infracao],
             ['Descrição', order.fine_data.descricao_infracao],
-            ['Data infração', order.fine_data.data_infracao?.toLocaleDateString('pt-BR') ?? null],
-            ['Data notificação', order.fine_data.data_notificacao?.toLocaleDateString('pt-BR') ?? null],
+            ['Data infração', order.fine_data.data_infracao ? formatDateBR(order.fine_data.data_infracao) : null],
+            ['Data notificação', order.fine_data.data_notificacao ? formatDateBR(order.fine_data.data_notificacao) : null],
             ['Tipo', order.fine_data.tipo_notificacao],
             ['Valor', order.fine_data.valor_multa_centavos ? formatBRL(order.fine_data.valor_multa_centavos) : null],
             ['Vício forte', order.fine_data.vicio_forte ? `Sim — ${order.fine_data.vicio_razao}` : 'Não'],
@@ -63,7 +64,7 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
           ['Preço', order.preco_centavos ? formatBRL(order.preco_centavos) : null],
           ['Faixa', order.price_tier?.faixa ?? null],
           ['TriboPay hash', order.tribopay_hash],
-          ['Pago em', order.paid_at?.toLocaleString('pt-BR') ?? null],
+          ['Pago em', order.paid_at ? formatDateTimeBR(order.paid_at) : null],
         ]} />
       </Section>
 
@@ -72,7 +73,7 @@ export default async function PedidoDetailPage({ params }: { params: { id: strin
           <div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-slate-500">
-                Gerado em {order.recurso.gerado_em.toLocaleString('pt-BR')} · arquivo: <code>{order.recurso.pdf_path}</code>
+                Gerado em {formatDateTimeBR(order.recurso.gerado_em)} · arquivo: <code>{order.recurso.pdf_path}</code>
               </p>
               <a
                 href={`/api/admin/pedidos/${order.id}/download`}
