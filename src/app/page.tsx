@@ -251,47 +251,17 @@ function Uploader() {
     }
   }, [])
 
-  // Fallback: se o token não chegar em 6s, mostra botão pra recarregar a verificação
-  const [needsReload, setNeedsReload] = useState(false)
-  useEffect(() => {
-    if (turnstileToken) {
-      setNeedsReload(false)
-      return
-    }
-    const t = setTimeout(() => setNeedsReload(true), 6000)
-    return () => clearTimeout(t)
-  }, [turnstileToken])
-
-  // Hard reload do widget: remove e renderiza novo do zero (último recurso)
-  const hardReloadTurnstile = useCallback(() => {
-    setNeedsReload(false)
-    setTurnstileToken('')
-    const w = window as unknown as {
-      turnstile?: {
-        remove: (id: string) => void
-        render: (el: HTMLElement, opts: Record<string, unknown>) => string
-      }
-    }
-    if (!w.turnstile || !turnstileRef.current) return
-    if (widgetIdRef.current) {
-      try { w.turnstile.remove(widgetIdRef.current) } catch {}
-      widgetIdRef.current = null
-    }
-    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
-    if (!siteKey) return
+  // Quando der erro de análise, recarrega a página em 4s pra renovar Turnstile do zero
+  const scheduleReloadIfAnalysisError = useCallback((msg: string) => {
+    // Heurística: erros que contêm essas palavras são de análise / dados, não de infra
+    const isAnalysisError = /multa|nítida|imagem|notificação|análise|preencher/i.test(msg)
+    if (!isAnalysisError) return
     setTimeout(() => {
-      const ww = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string } }
-      if (!ww.turnstile || !turnstileRef.current) return
-      widgetIdRef.current = ww.turnstile.render(turnstileRef.current, {
-        sitekey: siteKey,
-        callback: (token: string) => setTurnstileToken(token),
-        'expired-callback': () => setTurnstileToken(''),
-        'error-callback': () => setTurnstileToken(''),
-        theme: 'light',
-        size: 'flexible',
-      })
-    }, 100)
+      window.location.reload()
+    }, 4000)
   }, [])
+
+
 
   const upload = useCallback(
     async (file: File) => {
@@ -327,11 +297,14 @@ function Uploader() {
         if (!res.ok) throw new Error((data as { error: string }).error ?? 'Falha na análise')
         router.push(`/resultado/${(data as UploadResult).orderId}`)
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : 'Erro ao processar')
+        const msg = e instanceof Error ? e.message : 'Erro ao processar'
+        setError(msg)
         setLoading(false)
         setSelected(null)
+        // Se for falha de análise (não-multa/ilegível/etc), recarrega a página em 4s
+        // pra renovar o Turnstile completamente sem precisar de gambiarra de widget reset
+        scheduleReloadIfAnalysisError(msg)
       } finally {
-        // Token Turnstile é de uso único — sempre reseta após cada submit
         resetTurnstile()
       }
     },
@@ -427,23 +400,11 @@ function Uploader() {
             <p className="mt-5 flex items-center justify-center gap-1.5 text-xs text-slate-500">
               <LockIcon className="h-3.5 w-3.5" /> A imagem é processada e descartada — não guardamos seu arquivo.
             </p>
-            {!turnstileToken && !needsReload && (
+            {!turnstileToken && (
               <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-amber-700">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
                 Validando segurança da sessão…
               </p>
-            )}
-            {!turnstileToken && needsReload && (
-              <div className="mt-2 text-center">
-                <p className="text-xs text-red-700">Verificação travada. Clique pra tentar de novo:</p>
-                <button
-                  type="button"
-                  onClick={hardReloadTurnstile}
-                  className="mt-1 inline-block rounded-md bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-brand-blue-dark"
-                >
-                  ↻ Reiniciar verificação
-                </button>
-              </div>
             )}
 
           <div ref={turnstileRef} className="mt-3 flex justify-center" />
