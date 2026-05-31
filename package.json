@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postbuild": "mkdir -p .next/server/chunks/data && cp -r node_modules/pdfkit/js/data/. .next/server/chunks/data/"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

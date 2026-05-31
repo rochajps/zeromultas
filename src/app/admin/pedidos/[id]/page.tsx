@@ -39,14 +39,12 @@ async function marcarPagoManual(formData: FormData) {
 async function gerarRecursoManual(formData: FormData) {
   'use server'
   const orderId = String(formData.get('orderId'))
-  try {
-    await generateRecursoForOrder(orderId)
-    redirect(`/admin/pedidos/${orderId}?ok=Recurso+gerado+com+sucesso.`)
-  } catch (e) {
-    if (e && typeof e === 'object' && 'digest' in e) throw e
-    const msg = e instanceof Error ? e.message : 'Erro desconhecido'
-    redirect(`/admin/pedidos/${orderId}?err=${encodeURIComponent('Falha ao gerar: ' + msg)}`)
-  }
+  // Fire-and-forget: dispara em background pra UI não travar nem perder se o user sair.
+  // Erros são logados no PM2 e ficam visíveis no detalhe do pedido depois.
+  generateRecursoForOrder(orderId).catch((e) => {
+    console.error('[admin:gen-manual]', orderId, e)
+  })
+  redirect(`/admin/pedidos/${orderId}?ok=Gerando+recurso+em+background.+Atualize+a+pagina+em+%7E30s+pra+ver+o+resultado.`)
 }
 
 export default async function PedidoDetailPage({
