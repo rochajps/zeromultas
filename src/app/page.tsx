@@ -800,7 +800,7 @@ function Pricing() {
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
               Se decidir recorrer
             </span>
-            <p className="mt-3 text-2xl font-extrabold text-brand-blue-dark">A partir de R$ 47</p>
+            <p className="mt-3 text-2xl font-extrabold text-brand-blue-dark">A partir de R$ 19,99</p>
             <p className="mt-1 text-sm text-slate-600">
               Preço depende da faixa da sua multa. PIX na hora. Sem mensalidade.
             </p>
