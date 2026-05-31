@@ -135,17 +135,19 @@ function Diagnostico(props: {
           </p>
         )}
 
-        <div className="mt-6 rounded-xl bg-slate-50 p-4">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-sm font-medium text-slate-700">Sua chance de recorrer</span>
+        <div className="mt-6 rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-blue-50 p-5 ring-1 ring-emerald-200">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+            ⚡ Sua chance de anular
+          </p>
+          <div className="mt-3">
             <ScoreBadge score={props.score} />
           </div>
           {props.vicioForte ? (
-            <p className="mt-3 text-sm text-emerald-700">
-              ✓ Encontramos um erro formal: <strong>{props.vicioRazao ?? '—'}</strong>. Boa pedida pra anular.
+            <p className="mt-4 text-sm font-medium text-emerald-800">
+              ✓ Encontramos um erro formal: <strong>{props.vicioRazao ?? '—'}</strong>. Excelente argumento pra anular.
             </p>
           ) : (
-            <p className="mt-3 whitespace-pre-line text-sm text-slate-600">{props.mensagem}</p>
+            <p className="mt-4 text-sm font-medium text-slate-700">{props.mensagem}</p>
           )}
         </div>
 

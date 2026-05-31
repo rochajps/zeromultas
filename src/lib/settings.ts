@@ -23,18 +23,18 @@ export interface SettingsValues {
 export const DEFAULT_SETTINGS: SettingsValues = {
   prazo_dias: 30,
   prazo_cetran_dias: 30,
-  score_alta: 85,
-  score_media: 65,
-  score_moderada_baixa: 40,
+  score_alta: 90,
+  score_media: 80,
+  score_moderada_baixa: 70,
   tipo_padrao_quando_desconhecido: 'NA',
   valor_minimo_multa_centavos: 0,
   valor_maximo_multa_centavos: 0,
   msg_alta:
-    'Identificamos vício formal/processual claro. Chance significativa de anulação com fundamentação correta.',
+    'Encontramos vício formal claro nessa multa. Excelente fundamentação pra anular.',
   msg_media:
-    'Há indícios que sustentam o recurso. Vale tentar — sem garantia de êxito.',
+    'Há motivos sólidos pra contestar essa multa. Sua peça vai com fundamentação técnica forte.',
   msg_moderada_baixa:
-    'Não encontramos vício formal forte, mas ainda vale recorrer: o processo é gratuito, suspende pontos enquanto está em análise e o seu motivo será fundamentado tecnicamente em princípios do processo administrativo. Sem promessa de resultado.',
+    'Construímos seu recurso nos princípios do processo administrativo: ampla defesa, contraditório e razoabilidade. Recorrer é um direito seu — e o protocolo é gratuito.',
   msg_nao_eh_multa: 'Não conseguimos identificar uma multa válida nesta imagem.',
   msg_valor_fora_faixa:
     'O valor da multa está fora da faixa que atendemos no momento. Recomendamos pagar diretamente o auto.',
