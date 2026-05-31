@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (order.status === 'aguardando_pagamento' && order.tribopay_hash) {
     try {
       const status = await fetchChargeStatus(order.tribopay_hash)
-      if (status.status === 'pago' && order.status !== 'pago') {
+      if (status.status === 'pago') {
         await prisma.order.update({
           where: { id: order.id },
           data: { status: 'pago', paid_at: new Date() },
