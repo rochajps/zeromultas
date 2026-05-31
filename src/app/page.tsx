@@ -243,6 +243,14 @@ function Uploader() {
     setUtm(obj)
   }, [])
 
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken('')
+    const w = window as unknown as { turnstile?: { reset: (id: string) => void } }
+    if (w.turnstile && widgetIdRef.current) {
+      try { w.turnstile.reset(widgetIdRef.current) } catch {}
+    }
+  }, [])
+
   const upload = useCallback(
     async (file: File) => {
       setError(null)
@@ -263,9 +271,12 @@ function Uploader() {
         setError(e instanceof Error ? e.message : 'Erro ao processar')
         setLoading(false)
         setSelected(null)
+      } finally {
+        // Token Turnstile é de uso único — sempre reseta após cada submit
+        resetTurnstile()
       }
     },
-    [router, utm, turnstileToken, formStartedAt],
+    [router, utm, turnstileToken, formStartedAt, resetTurnstile],
   )
 
   return (
